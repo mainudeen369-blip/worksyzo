@@ -10,13 +10,15 @@ services:
     plan: free
     region: singapore
     rootDir: .
-    buildCommand: npm install && npm run build:packages && npm run build -w @worksyzo/api
+    buildCommand: npm install --include=dev && npm run build:packages && npm run build -w @worksyzo/api
     startCommand: npm run start -w @worksyzo/api
     healthCheckPath: /health
     autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NPM_CONFIG_PRODUCTION
+        value: "false"
       - key: COOKIE_SECURE
         value: "true"
       - key: WEB_ORIGIN
@@ -53,15 +55,17 @@ services:
   - type: worker
     name: worksyzo-worker
     runtime: node
-    plan: free
+    plan: starter
     region: singapore
     rootDir: .
-    buildCommand: npm install && npm run build:packages && npm run build -w @worksyzo/worker
+    buildCommand: npm install --include=dev && npm run build:packages && npm run build -w @worksyzo/worker
     startCommand: npm run start -w @worksyzo/worker
     autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NPM_CONFIG_PRODUCTION
+        value: "false"
       - key: STORAGE_DRIVER
         value: r2
       - key: LLM_PROVIDER
