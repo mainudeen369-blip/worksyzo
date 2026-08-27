@@ -75,10 +75,12 @@ export class AuthController {
   }
 
   private cookieOptions() {
+    // Cross-site (Vercel web → Render API) needs SameSite=None + Secure.
+    const crossSite = config.session.secure;
     return {
       httpOnly: true,
-      sameSite: 'lax' as const,
-      secure: config.session.secure,
+      sameSite: (crossSite ? 'none' : 'lax') as 'none' | 'lax',
+      secure: crossSite,
       path: '/',
     };
   }

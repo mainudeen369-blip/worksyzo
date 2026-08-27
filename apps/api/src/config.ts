@@ -8,13 +8,25 @@ function readSessionSecret(): string {
   return secret;
 }
 
+function readWebOrigins(): string[] {
+  const raw = optionalEnv('WEB_ORIGIN', 'http://localhost:3001');
+  return raw
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+}
+
 export const config = {
   env: optionalEnv('NODE_ENV', 'development'),
   get isProduction(): boolean {
     return this.env === 'production';
   },
-  port: Number(optionalEnv('API_PORT', '4000')),
-  webOrigin: optionalEnv('WEB_ORIGIN', 'http://localhost:3000'),
+  /** Prefer platform PORT (Render/Fly); fall back to API_PORT for local. */
+  port: Number(optionalEnv('PORT', optionalEnv('API_PORT', '4000'))),
+  webOrigins: readWebOrigins(),
+  get webOrigin(): string {
+    return this.webOrigins[0] ?? 'http://localhost:3001';
+  },
   session: {
     cookieName: 'wsz_session',
     secret: readSessionSecret(),

@@ -146,10 +146,11 @@ export class OrgsController {
   ) {
     const accepted = await this.members.acceptInvite(body);
     const token = await this.sessions.create(accepted.userId, { ip: null, userAgent: null });
+    const crossSite = config.session.secure;
     res.cookie(config.session.cookieName, token, {
       httpOnly: true,
-      sameSite: 'lax',
-      secure: config.session.secure,
+      sameSite: crossSite ? 'none' : 'lax',
+      secure: crossSite,
       path: '/',
       maxAge: config.session.ttlDays * 24 * 60 * 60 * 1000,
     });
