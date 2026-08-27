@@ -1,0 +1,22 @@
+Acme Manufacturing — Leave Policy (sample for Worksyzo demo)
+
+1. Casual leave
+- Employees receive 12 casual leave days per calendar year.
+- Casual leave does not carry forward to the next year.
+- Requests must be submitted at least 2 working days in advance, except emergencies.
+
+2. Earned leave
+- Employees earn 1.25 days of earned leave per completed month of service.
+- Up to 30 days of earned leave may be carried forward.
+- Encashment of earned leave is allowed only at resignation or retirement, subject to Finance approval.
+
+3. Approval flow
+- Leave requests go first to the reporting manager.
+- After manager approval, HR confirms and records the leave in the attendance system.
+- Any leave longer than 5 consecutive days also needs Admin approval.
+
+4. Sick leave
+- Up to 8 sick leave days are available per year with a medical certificate for absences over 2 days.
+
+5. Annual day and special closures
+- Company-declared holidays and the Annual Day do not consume casual or earned leave.

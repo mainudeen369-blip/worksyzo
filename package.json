@@ -1,0 +1,35 @@
+{
+  "name": "worksyzo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Worksyzo - private AI employee for organizations (Knowledge + Memory + Work + Actions)",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "docker:up": "node scripts/docker-up.mjs",
+    "docker:down": "docker stop worksyzo-postgres worksyzo-redis",
+    "docker:reset": "docker rm -f worksyzo-postgres worksyzo-redis && docker volume rm worksyzo-pgdata && node scripts/docker-up.mjs",
+    "build:packages": "npm run build -w @worksyzo/shared && npm run build -w @worksyzo/db && npm run build -w @worksyzo/storage && npm run build -w @worksyzo/ingest",
+    "watch:packages": "concurrently -n shared,db,storage,ingest -c cyan,magenta,green,yellow \"npm run dev -w @worksyzo/shared\" \"npm run dev -w @worksyzo/db\" \"npm run dev -w @worksyzo/storage\" \"npm run dev -w @worksyzo/ingest\"",
+    "db:migrate": "npm run migrate -w @worksyzo/db",
+    "db:seed": "npm run seed -w @worksyzo/db",
+    "db:provision": "npm run provision -w @worksyzo/db",
+    "db:reset": "npm run docker:reset && node scripts/wait-for-db.mjs && npm run db:migrate && npm run db:seed",
+    "dev": "npm run build:packages && concurrently -n pkgs,api,web,worker -c gray,green,blue,yellow \"npm run watch:packages\" \"npm run dev -w @worksyzo/api\" \"npm run dev -w @worksyzo/web\" \"npm run dev -w @worksyzo/worker\"",
+    "dev:api": "npm run build:packages && npm run dev -w @worksyzo/api",
+    "dev:web": "npm run dev -w @worksyzo/web",
+    "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
+    "test:isolation": "npm run test:isolation -w @worksyzo/db",
+    "setup:neon": "npm run build:packages && npm run db:migrate && npm run db:seed",
+    "setup": "npm install && npm run docker:up && node scripts/wait-for-db.mjs && npm run build:packages && npm run db:migrate && npm run db:seed"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.2"
+  }
+}
