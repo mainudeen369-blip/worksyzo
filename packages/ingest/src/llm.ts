@@ -37,22 +37,22 @@ export function detectProvider(): ProviderConfig {
 
   // Smart key detection if a key was placed in OPENAI_API_KEY
   const groqKey = rawGroq || (rawOpenAI?.startsWith('gsk_') ? rawOpenAI : undefined);
-  const geminiKey = rawGemini || (rawOpenAI?.startsWith('AIza') ? rawOpenAI : undefined);
+  const geminiKey = rawGemini || (rawOpenAI?.startsWith('AQ.') || rawOpenAI?.startsWith('AIza') ? rawOpenAI : undefined);
   const openrouterKey = rawOpenRouter || (rawOpenAI?.startsWith('sk-or-') ? rawOpenAI : undefined);
-  const openaiKey = rawOpenAI && !rawOpenAI.startsWith('gsk_') && !rawOpenAI.startsWith('AIza') && !rawOpenAI.startsWith('sk-or-') ? rawOpenAI : undefined;
+  const openaiKey = rawOpenAI && !rawOpenAI.startsWith('gsk_') && !rawOpenAI.startsWith('AQ.') && !rawOpenAI.startsWith('AIza') && !rawOpenAI.startsWith('sk-or-') ? rawOpenAI : undefined;
 
-  // 1. Groq (Ultra-fast Llama-3.3-70b)
+  // 1. Groq (High-Speed GPT-OSS-120B / Qwen)
   if (groqKey || explicit === 'groq') {
     return {
       provider: 'groq',
       apiKey: groqKey,
       baseUrl: optionalEnv('GROQ_BASE_URL', 'https://api.groq.com/openai/v1').replace(/\/$/, ''),
-      chatModel: optionalEnv('GROQ_CHAT_MODEL', 'llama-3.3-70b-versatile'),
+      chatModel: optionalEnv('GROQ_CHAT_MODEL', 'openai/gpt-oss-120b'),
       embedModel: optionalEnv('GROQ_EMBED_MODEL', 'text-embedding-3-small'),
     };
   }
 
-  // 2. Gemini (Google Gemini 1.5 Flash / 2.0)
+  // 2. Gemini (Google Gemini 3.5 Flash)
   if (geminiKey || explicit === 'gemini') {
     return {
       provider: 'gemini',
@@ -61,7 +61,7 @@ export function detectProvider(): ProviderConfig {
         'GEMINI_BASE_URL',
         'https://generativelanguage.googleapis.com/v1beta/openai',
       ).replace(/\/$/, ''),
-      chatModel: optionalEnv('GEMINI_CHAT_MODEL', 'gemini-1.5-flash'),
+      chatModel: optionalEnv('GEMINI_CHAT_MODEL', 'gemini-3.5-flash-lite'),
       embedModel: optionalEnv('GEMINI_EMBED_MODEL', 'text-embedding-004'),
     };
   }
@@ -229,45 +229,57 @@ export async function chatCompletion(
 ): Promise<ChatResult> {
   const provider = detectProvider();
 
+  // Try candidate models in order for resilience
+  const candidateModels: string[] = [];
+  if (provider.chatModel) candidateModels.push(provider.chatModel);
+  if (provider.provider === 'groq') {
+    if (!candidateModels.includes('openai/gpt-oss-120b')) candidateModels.push('openai/gpt-oss-120b');
+    if (!candidateModels.includes('qwen/qwen3.8-27b')) candidateModels.push('qwen/qwen3.8-27b');
+  } else if (provider.provider === 'gemini') {
+    if (!candidateModels.includes('gemini-3.5-flash-lite')) candidateModels.push('gemini-3.5-flash-lite');
+  }
+
   if (provider.apiKey) {
-    try {
-      const res = await fetch(`${provider.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${provider.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: provider.chatModel,
-          temperature: 0.3,
-          messages,
-        }),
-      });
+    for (const modelName of candidateModels) {
+      try {
+        const res = await fetch(`${provider.baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${provider.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: modelName,
+            temperature: 0.2,
+            messages,
+          }),
+        });
 
-      if (res.ok) {
-        const json = (await res.json()) as {
-          choices: { message?: { content?: string } }[];
-          usage?: { prompt_tokens?: number; completion_tokens?: number };
-          model?: string;
-        };
-
-        const content = json.choices[0]?.message?.content?.trim();
-        if (content) {
-          return {
-            content,
-            model: json.model || provider.chatModel,
-            promptTokens: json.usage?.prompt_tokens ?? 0,
-            completionTokens: json.usage?.completion_tokens ?? 0,
+        if (res.ok) {
+          const json = (await res.json()) as {
+            choices: { message?: { content?: string } }[];
+            usage?: { prompt_tokens?: number; completion_tokens?: number };
+            model?: string;
           };
+
+          const content = json.choices[0]?.message?.content?.trim();
+          if (content) {
+            return {
+              content,
+              model: json.model || modelName,
+              promptTokens: json.usage?.prompt_tokens ?? 0,
+              completionTokens: json.usage?.completion_tokens ?? 0,
+            };
+          }
+        } else {
+          const body = await res.text();
+          // eslint-disable-next-line no-console
+          console.warn(`Remote chat with model ${modelName} returned ${res.status}: ${body.slice(0, 150)}`);
         }
-      } else {
-        const body = await res.text();
+      } catch (err) {
         // eslint-disable-next-line no-console
-        console.warn(`Remote chat failed (${res.status}): ${body.slice(0, 150)}. Using local synthesis.`);
+        console.warn(`Remote chat attempt with ${modelName} failed:`, (err as Error).message);
       }
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn('Remote chat request error. Using local synthesis:', (err as Error).message);
     }
   }
 
@@ -299,16 +311,13 @@ export async function chatCompletion(
 
       answer += `### ${cleanTitle} ${citations}\n\n`;
 
-      // Extract high-value paragraphs and bullet points
       for (const item of items) {
-        // Normalize lines and filter out orphaned fragments
         const raw = item.excerpt.replace(/\r\n/g, '\n').replace(/\t/g, ' ');
         const lines = raw
           .split('\n')
           .map((l) => l.trim())
           .filter((l) => l.length > 5 && !/^[•\-\*]\s*ferences$/i.test(l));
 
-        // Group into semantic statements
         const statements: string[] = [];
         let currentStmt = '';
 
