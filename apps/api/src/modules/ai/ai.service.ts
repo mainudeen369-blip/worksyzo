@@ -57,60 +57,83 @@ export class AiService {
       const queryVector = embedded.vectors[0];
       if (!queryVector) throw new BadRequestException('Could not embed question');
 
-      // Multi-Strategy Retrieval:
-      // 1. Vector Cosine Similarity Search
-      // 2. Keyword & Title Trigram / ILIKE Match for targeted document questions (e.g. "BBVA Factsheet", "leave policy")
-      const keywords = input.message
-        .toLowerCase()
-        .replace(/[^a-z0-9\s]/g, ' ')
-        .split(/\s+/)
-        .filter((w) => w.length > 2 && !['the', 'and', 'for', 'about', 'this', 'give', 'what', 'brief', 'show', 'tell'].includes(w));
-      
-      const keywordPattern = keywords.length > 0 ? `%(${keywords.join('|')})%` : '%';
+    // Multi-Strategy Retrieval:
+    // 1. Vector Cosine Similarity Search
+    // 2. Keyword & Title Trigram / Regex Match for targeted document questions (e.g. "BBVA Factsheet", "leave policy")
+    // 3. Document recency fallback when asking for latest/recent documents
+    const rawTokens = input.message
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 1);
 
-      const hits = await client.query<{
-        document_id: string;
-        title: string;
-        chunk_index: number;
-        content: string;
-        distance: number;
-      }>(
-        `WITH vector_hits AS (
-           SELECT dc.document_id, d.title, dc.chunk_index, dc.content,
-                  (dc.embedding <=> $1::vector) AS distance,
-                  1 AS priority
-           FROM document_chunks dc
-           JOIN documents d ON d.id = dc.document_id AND d.org_id = dc.org_id
-           WHERE d.deleted_at IS NULL
-             AND d.status = 'ready'
-             AND d.visibility = 'org'
-             AND dc.embedding IS NOT NULL
-           ORDER BY dc.embedding <=> $1::vector
-           LIMIT 8
-         ),
-         keyword_hits AS (
-           SELECT dc.document_id, d.title, dc.chunk_index, dc.content,
-                  0.1 AS distance,
-                  0 AS priority
-           FROM document_chunks dc
-           JOIN documents d ON d.id = dc.document_id AND d.org_id = dc.org_id
-           WHERE d.deleted_at IS NULL
-             AND d.status = 'ready'
-             AND d.visibility = 'org'
-             AND (d.title ~* $2 OR dc.content ~* $2)
-           LIMIT 4
-         )
-         SELECT DISTINCT ON (document_id, chunk_index)
-                document_id, title, chunk_index, content, distance
-         FROM (
-           SELECT * FROM keyword_hits
-           UNION ALL
-           SELECT * FROM vector_hits
-         ) combined
-         ORDER BY document_id, chunk_index, priority ASC, distance ASC
-         LIMIT 8`,
-        [toVectorLiteral(queryVector), keywordPattern],
-      );
+    const stopwords = new Set([
+      'the', 'and', 'for', 'about', 'this', 'give', 'what', 'brief', 'show',
+      'tell', 'please', 'can', 'you', 'with', 'from', 'that', 'have', 'has',
+      'is', 'are', 'was', 'were', 'our', 'all', 'any', 'how', 'who', 'when',
+      'where', 'why', 'which', 'summarize', 'summary'
+    ]);
+
+    const keywords = rawTokens.filter((w) => !stopwords.has(w) && w.length >= 2);
+    const keywordRegex = keywords.length > 0 ? `(${keywords.map((k) => k.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|')})` : null;
+
+    const hits = await client.query<{
+      document_id: string;
+      title: string;
+      chunk_index: number;
+      content: string;
+      distance: number;
+    }>(
+      `WITH vector_hits AS (
+         SELECT dc.document_id, d.title, dc.chunk_index, dc.content,
+                (dc.embedding <=> $1::vector) AS distance,
+                2 AS priority
+         FROM document_chunks dc
+         JOIN documents d ON d.id = dc.document_id AND d.org_id = dc.org_id
+         WHERE d.deleted_at IS NULL
+           AND d.status = 'ready'
+           AND d.visibility = 'org'
+           AND dc.embedding IS NOT NULL
+         ORDER BY dc.embedding <=> $1::vector
+         LIMIT 8
+       ),
+       keyword_hits AS (
+         SELECT dc.document_id, d.title, dc.chunk_index, dc.content,
+                0.05 AS distance,
+                1 AS priority
+         FROM document_chunks dc
+         JOIN documents d ON d.id = dc.document_id AND d.org_id = dc.org_id
+         WHERE d.deleted_at IS NULL
+           AND d.status = 'ready'
+           AND d.visibility = 'org'
+           AND ($2::text IS NOT NULL AND (d.title ~* $2 OR dc.content ~* $2))
+         LIMIT 6
+       ),
+       recent_hits AS (
+         SELECT dc.document_id, d.title, dc.chunk_index, dc.content,
+                0.15 AS distance,
+                3 AS priority
+         FROM document_chunks dc
+         JOIN documents d ON d.id = dc.document_id AND d.org_id = dc.org_id
+         WHERE d.deleted_at IS NULL
+           AND d.status = 'ready'
+           AND d.visibility = 'org'
+         ORDER BY d.created_at DESC, dc.chunk_index ASC
+         LIMIT 4
+       )
+       SELECT DISTINCT ON (document_id, chunk_index)
+              document_id, title, chunk_index, content, distance, priority
+       FROM (
+         SELECT * FROM keyword_hits
+         UNION ALL
+         SELECT * FROM vector_hits
+         UNION ALL
+         SELECT * FROM recent_hits
+       ) combined
+       ORDER BY document_id, chunk_index, priority ASC, distance ASC
+       LIMIT 8`,
+      [toVectorLiteral(queryVector), keywordRegex],
+    );
 
       const citations: CitationView[] = hits.rows.map((row) => ({
         documentId: row.document_id,

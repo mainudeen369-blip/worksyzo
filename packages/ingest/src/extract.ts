@@ -42,19 +42,12 @@ export async function extractTextFromBuffer(
       return text;
     }
 
-    // Fallback: Decompress and parse raw PDF streams & Text Blocks (BT ... ET, TJ, Tj)
-    const rawStreamText = extractRawPdfStreamText(buffer);
-    if (rawStreamText.length >= 25) {
-      return cleanText(rawStreamText);
-    }
-
-    if (text.length > 0 || rawStreamText.length > 0) {
-      return cleanText(`${text}\n\n${rawStreamText}`);
-    }
-
-    // If PDF is mostly graphical / scanned, synthesize an indexed document card with title
+    // 4. If extracted text is mostly empty or noise (e.g. scanned/image-only canvas PDF), synthesize a structured document summary card
     const baseTitle = path.basename(fileName, ext).replace(/[_-]+/g, ' ');
-    return cleanText(`Document: ${baseTitle}\nFile: ${fileName}\nType: PDF Document\n(Extracted metadata for visual PDF factsheet)`);
+    return cleanText(`Document Overview: ${baseTitle}
+File: ${fileName}
+Format: PDF Document (Visual/Scan Asset)
+Status: Uploaded & Indexed in Organization Documents Repository.`);
   }
 
   // 2. Microsoft Word DOCX
