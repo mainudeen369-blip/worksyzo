@@ -11,11 +11,11 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>('dark');
+  const [theme, setTheme] = useState<Theme>('light');
 
   useEffect(() => {
     const stored = window.localStorage.getItem(STORAGE_KEY) as Theme | null;
-    const initial = stored === 'light' || stored === 'dark' ? stored : 'dark';
+    const initial = stored === 'light' || stored === 'dark' ? stored : 'light';
     setTheme(initial);
     applyTheme(initial);
   }, []);
@@ -33,7 +33,7 @@ export function ThemeToggle() {
       className="theme-fab"
       onClick={toggle}
       aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-      title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+      title={theme === 'dark' ? 'Switch to Light mode' : 'Switch to Dark mode'}
     >
       {theme === 'dark' ? '☀' : '☾'}
     </button>
