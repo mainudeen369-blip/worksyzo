@@ -45,8 +45,8 @@ export async function processDocument(input: ProcessDocumentInput): Promise<void
     const storage = getObjectStorage();
     const buffer = await storage.get(doc.storage_key);
     const text = await extractTextFromBuffer(buffer, doc.mime_type, doc.title);
-    if (!text || text.length < 20) {
-      throw new Error('No readable text found in this file. Try a text-based PDF or DOCX.');
+    if (!text || text.trim().length < 5) {
+      throw new Error('No readable text or metadata could be extracted from this file.');
     }
 
     const chunks = chunkText(text);
