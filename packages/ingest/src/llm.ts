@@ -33,40 +33,44 @@ export function detectProvider(): ProviderConfig {
   const openrouterKey = process.env.OPENROUTER_API_KEY?.trim();
   const openaiKey = process.env.OPENAI_API_KEY?.trim();
 
-  if (explicit === 'groq' || (!openaiKey && groqKey)) {
+  // If Groq key is present or explicitly selected
+  if (groqKey || explicit === 'groq') {
     return {
       provider: 'groq',
       apiKey: groqKey || openaiKey,
-      baseUrl: optionalEnv('OPENAI_BASE_URL', 'https://api.groq.com/openai/v1').replace(/\/$/, ''),
-      chatModel: optionalEnv('LLM_CHAT_MODEL', 'llama-3.3-70b-versatile'),
-      embedModel: optionalEnv('LLM_EMBED_MODEL', 'text-embedding-3-small'),
+      baseUrl: optionalEnv('GROQ_BASE_URL', 'https://api.groq.com/openai/v1').replace(/\/$/, ''),
+      chatModel: optionalEnv('GROQ_CHAT_MODEL', 'llama-3.3-70b-versatile'),
+      embedModel: optionalEnv('GROQ_EMBED_MODEL', 'text-embedding-3-small'),
     };
   }
 
-  if (explicit === 'gemini' || (!openaiKey && geminiKey)) {
+  // If Gemini key is present or explicitly selected
+  if (geminiKey || explicit === 'gemini') {
     return {
       provider: 'gemini',
       apiKey: geminiKey || openaiKey,
       baseUrl: optionalEnv(
-        'OPENAI_BASE_URL',
+        'GEMINI_BASE_URL',
         'https://generativelanguage.googleapis.com/v1beta/openai',
       ).replace(/\/$/, ''),
-      chatModel: optionalEnv('LLM_CHAT_MODEL', 'gemini-1.5-flash'),
-      embedModel: optionalEnv('LLM_EMBED_MODEL', 'text-embedding-004'),
+      chatModel: optionalEnv('GEMINI_CHAT_MODEL', 'gemini-1.5-flash'),
+      embedModel: optionalEnv('GEMINI_EMBED_MODEL', 'text-embedding-004'),
     };
   }
 
-  if (explicit === 'openrouter' || (!openaiKey && openrouterKey)) {
+  // If OpenRouter key is present or explicitly selected
+  if (openrouterKey || explicit === 'openrouter') {
     return {
       provider: 'openrouter',
       apiKey: openrouterKey || openaiKey,
-      baseUrl: optionalEnv('OPENAI_BASE_URL', 'https://openrouter.ai/api/v1').replace(/\/$/, ''),
-      chatModel: optionalEnv('LLM_CHAT_MODEL', 'meta-llama/llama-3.3-70b-instruct:free'),
-      embedModel: optionalEnv('LLM_EMBED_MODEL', 'text-embedding-3-small'),
+      baseUrl: optionalEnv('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1').replace(/\/$/, ''),
+      chatModel: optionalEnv('OPENROUTER_CHAT_MODEL', 'meta-llama/llama-3.3-70b-instruct:free'),
+      embedModel: optionalEnv('OPENROUTER_EMBED_MODEL', 'text-embedding-3-small'),
     };
   }
 
-  if (openaiKey) {
+  // If OpenAI key is present and configured
+  if (openaiKey && !openaiKey.startsWith('gsk_') && !openaiKey.startsWith('AIza')) {
     return {
       provider: 'openai',
       apiKey: openaiKey,
