@@ -92,6 +92,20 @@ export interface ChatResponseView {
   citations: CitationView[];
 }
 
+export interface FaceChallengeResponse {
+  challengeId: string;
+  challengeType: 'smile' | 'blink' | 'surprise' | 'neutral';
+  instruction: string;
+  expiresInSeconds: number;
+}
+
+export interface FaceCredentialStatus {
+  enrolled: boolean;
+  registeredExpression?: string;
+  createdAt?: string;
+  lastUsedAt?: string | null;
+}
+
 export interface ApiErrorBody {
   statusCode: number;
   error: string;
@@ -105,6 +119,9 @@ export const AUDIT_ACTIONS = {
   userLogin: 'user.login',
   userLoginFailed: 'user.login_failed',
   userLogout: 'user.logout',
+  userFaceRegistered: 'user.face_registered',
+  userFaceLogin: 'user.face_login',
+  userFaceLoginFailed: 'user.face_login_failed',
   orgCreated: 'org.created',
   orgUpdated: 'org.updated',
   memberInvited: 'member.invited',

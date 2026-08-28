@@ -69,6 +69,26 @@ export const chatSchema = z.object({
 });
 export type ChatInput = z.infer<typeof chatSchema>;
 
+export const faceChallengeRequestSchema = z.object({
+  email: emailSchema.optional(),
+});
+export type FaceChallengeRequestInput = z.infer<typeof faceChallengeRequestSchema>;
+
+export const faceRegisterSchema = z.object({
+  descriptor: z.array(z.number()).min(16).max(1024),
+  expression: z.enum(['smile', 'blink', 'surprise', 'neutral']).default('smile'),
+  challengeId: z.string().uuid(),
+});
+export type FaceRegisterInput = z.infer<typeof faceRegisterSchema>;
+
+export const faceLoginSchema = z.object({
+  email: emailSchema,
+  descriptor: z.array(z.number()).min(16).max(1024),
+  expression: z.enum(['smile', 'blink', 'surprise', 'neutral']),
+  challengeId: z.string().uuid(),
+});
+export type FaceLoginInput = z.infer<typeof faceLoginSchema>;
+
 /** URL-safe org slug derived from a display name. */
 export function slugify(input: string): string {
   return input

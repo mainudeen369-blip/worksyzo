@@ -10,6 +10,7 @@ const NAV = [
   { href: '/app/chat', label: 'Chat' },
   { href: '/app/documents', label: 'Documents' },
   { href: '/app/members', label: 'People' },
+  { href: '/app/face-id', label: 'Face ID 📸' },
   { href: '/app/audit', label: 'Audit' },
   { href: '/app/usage', label: 'Usage' },
   { href: '/app/blueprint', label: 'Blueprint' },

@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { getObjectStorage, storageSetupHint } from '@worksyzo/storage';
+import { detectProvider, isAiConfigured } from '@worksyzo/ingest';
 
 @Controller('health')
 export class HealthController {
@@ -13,6 +14,8 @@ export class HealthController {
       storage = { driver: 'error', detail: (error as Error).message };
     }
 
+    const aiProvider = detectProvider();
+
     return {
       ok: true,
       service: 'worksyzo-api',
@@ -20,7 +23,12 @@ export class HealthController {
       step: 'B',
       storage,
       storageHint: storageSetupHint(),
-      aiConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
+      aiConfigured: isAiConfigured(),
+      aiProvider: {
+        provider: aiProvider.provider,
+        chatModel: aiProvider.chatModel,
+        embedModel: aiProvider.embedModel,
+      },
     };
   }
 }

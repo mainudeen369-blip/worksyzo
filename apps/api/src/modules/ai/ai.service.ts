@@ -25,12 +25,6 @@ export class AiService {
     role: string,
     input: ChatInput,
   ): Promise<ChatResponseView> {
-    if (!process.env.OPENAI_API_KEY?.trim()) {
-      throw new ServiceUnavailableException(
-        'AI is not configured yet. Add OPENAI_API_KEY to the server environment.',
-      );
-    }
-
     return withTenant({ orgId, userId }, async (client) => {
       let conversationId = input.conversationId;
       if (conversationId) {
@@ -101,24 +95,27 @@ export class AiService {
               )
               .join('\n\n');
 
-      const completion = await chatCompletion([
-        {
-          role: 'system',
-          content: [
-            `You are Worksyzo, the private AI employee for "${orgName}".`,
-            `The current user role is "${role}".`,
-            'Answer ONLY using the provided organization context when it is relevant.',
-            'If the context is insufficient, say what is missing and suggest uploading a document.',
-            'Cite sources inline like [#1], [#2] matching the context blocks.',
-            'Never invent policies, decisions, or people that are not in the context.',
-            'Never mention other organizations or speculate about cross-tenant data.',
-          ].join(' '),
-        },
-        {
-          role: 'user',
-          content: `Organization context:\n\n${contextBlock}\n\nQuestion: ${input.message}`,
-        },
-      ]);
+      const completion = await chatCompletion(
+        [
+          {
+            role: 'system',
+            content: [
+              `You are Worksyzo, the private AI employee for "${orgName}".`,
+              `The current user role is "${role}".`,
+              'Answer ONLY using the provided organization context when it is relevant.',
+              'If the context is insufficient, say what is missing and suggest uploading a document.',
+              'Cite sources inline like [#1], [#2] matching the context blocks.',
+              'Never invent policies, decisions, or people that are not in the context.',
+              'Never mention other organizations or speculate about cross-tenant data.',
+            ].join(' '),
+          },
+          {
+            role: 'user',
+            content: `Organization context:\n\n${contextBlock}\n\nQuestion: ${input.message}`,
+          },
+        ],
+        citations.map((c) => ({ title: c.title, excerpt: c.excerpt, chunkIndex: c.chunkIndex })),
+      );
 
       const assistant = await queryOne<{ id: string }>(
         client,
