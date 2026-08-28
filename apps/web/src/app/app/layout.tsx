@@ -428,8 +428,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Main Content Area */}
-      <main className="app-main-content">
-        <div className="app-content-inner">
+      <main className={`app-main-content ${pathname === '/app/chat' ? 'chat-mode' : ''}`}>
+        <div className={`app-content-inner ${pathname === '/app/chat' ? 'chat-inner' : ''}`}>
           {children}
         </div>
       </main>
@@ -516,9 +516,18 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           background: var(--bg);
         }
 
+        .app-main-content.chat-mode {
+          padding: 0;
+        }
+
         .app-content-inner {
           max-width: 1200px;
           margin: 0 auto;
+        }
+
+        .app-content-inner.chat-inner {
+          max-width: 100%;
+          margin: 0;
         }
 
         @media (max-width: 768px) {
@@ -533,6 +542,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           .app-main-content {
             margin-left: 0;
             padding: 1.25rem 1rem;
+          }
+
+          .app-main-content.chat-mode {
+            padding: 0;
           }
         }
 

@@ -271,75 +271,84 @@ export async function chatCompletion(
     }
   }
 
-  // High-Quality GPT-Style Local Synthesis Fallback
+  // High-Quality ChatGPT-Style Local Synthesis Fallback
   const userMsg = messages.find((m) => m.role === 'user')?.content || '';
   const question = userMsg.replace(/^Organization context:[\s\S]*?Question:\s*/i, '').trim();
 
   let answer = '';
   if (contextSnippets.length === 0) {
-    answer = `### 🔍 No Direct Matches Found\n\nI could not locate specific information for **"${question}"** in the uploaded organization documents.\n\n**Suggestions:**\n• Ensure the relevant policy, SOP, or handbook has been uploaded under **Documents**.\n• Try rephrasing your question using broader keywords (e.g., *"leave"*, *"social media"*, *"procedure"*).`;
+    answer = `I could not find specific details for **"${question}"** in the uploaded organization documents.\n\n### Suggestions:\n• Ensure the relevant policy, SOP, or contract is uploaded in the **Documents** section.\n• Try asking with alternative keywords (e.g., *"social media"*, *"leave rules"*, *"pricing"*).`;
   } else {
     // Group snippets by document title
-    const grouped = new Map<string, Array<{ excerpt: string; index: number }>>();
+    const docMap = new Map<string, Array<{ excerpt: string; index: number }>>();
     contextSnippets.forEach((snip, idx) => {
-      const existing = grouped.get(snip.title) || [];
-      existing.push({ excerpt: snip.excerpt, index: idx + 1 });
-      grouped.set(snip.title, existing);
+      const list = docMap.get(snip.title) || [];
+      list.push({ excerpt: snip.excerpt, index: idx + 1 });
+      docMap.set(snip.title, list);
     });
 
-    answer = `### 📋 Executive Summary\n\nHere is the verified information found in your organization documents regarding **"${question}"**:\n\n`;
+    answer = `Here is the verified breakdown from your organization documents regarding **"${question}"**:\n\n`;
 
-    let docCounter = 1;
-    for (const [title, items] of grouped.entries()) {
-      const citationPills = items.map((it) => `[#${it.index}]`).join(' ');
-      answer += `#### 📄 ${title} ${citationPills}\n\n`;
+    let docCount = 0;
+    for (const [title, items] of docMap.entries()) {
+      docCount++;
+      if (docCount > 3) break;
 
+      const citations = items.map((it) => `[#${it.index}]`).join(' ');
+      const cleanTitle = title.replace(/\.pdf$/i, '').replace(/_/g, ' ');
+
+      answer += `### ${cleanTitle} ${citations}\n\n`;
+
+      // Extract high-value paragraphs and bullet points
       for (const item of items) {
-        // Clean text and extract structured points
-        const text = item.excerpt.replace(/\r\n/g, '\n').replace(/\t/g, ' ').trim();
-        
-        // Split by question-answer patterns (Q: ... A: ...) or numbered points or checkmarks (✓)
-        const parts = text
-          .split(/(?=(?:Q:|\b\d+\.|\b✓|[•\-\*]\s+|What Happens After|How long does|Can I\b))/g)
-          .map((p) => p.trim())
-          .filter((p) => p.length > 10);
+        // Normalize lines and filter out orphaned fragments
+        const raw = item.excerpt.replace(/\r\n/g, '\n').replace(/\t/g, ' ');
+        const lines = raw
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l.length > 5 && !/^[•\-\*]\s*ferences$/i.test(l));
 
-        if (parts.length > 1) {
-          parts.slice(0, 5).forEach((part) => {
-            let formatted = part.replace(/^[•\-\*✓\s]+/, '').trim();
-            // Highlight Q: and A:
-            if (/^Q:\s*/i.test(formatted)) {
-              formatted = formatted.replace(/^Q:\s*/i, '**Question:** ').replace(/\s*A:\s*/i, '\n  • **Answer:** ');
-            } else if (/^\d+\.\s+/.test(formatted)) {
-              formatted = formatted.replace(/^(\d+\.\s*)([^\-]+?)(\s*-\s*|\s*:\s*)(.*)$/, '**$2:** $4');
-            } else if (!formatted.startsWith('**') && formatted.includes(' - ')) {
-              const [header, ...rest] = formatted.split(' - ');
-              formatted = `**${header?.trim()}:** ${rest.join(' - ').trim()}`;
-            }
-            answer += `• ${formatted}\n\n`;
-          });
-        } else {
-          // Sentences splitting
-          const sentences = text
-            .split(/(?<=[.?!])\s+/)
-            .map((s) => s.trim())
-            .filter((s) => s.length > 15);
+        // Group into semantic statements
+        const statements: string[] = [];
+        let currentStmt = '';
 
-          if (sentences.length > 0) {
-            sentences.slice(0, 4).forEach((sentence) => {
-              answer += `• ${sentence}\n\n`;
-            });
+        for (const line of lines) {
+          if (/^(?:Q:|Step\s*\d+|How|What|Can I|Template|Authorization|Market|Automatic)/i.test(line) || /^\d+\./.test(line)) {
+            if (currentStmt) statements.push(currentStmt);
+            currentStmt = line;
+          } else if (currentStmt) {
+            currentStmt += ' ' + line;
           } else {
-            answer += `• ${text}\n\n`;
+            currentStmt = line;
           }
         }
-      }
+        if (currentStmt) statements.push(currentStmt);
 
-      docCounter++;
-      if (docCounter > 3) break;
+        if (statements.length > 0) {
+          statements.slice(0, 4).forEach((stmt) => {
+            const clean = stmt.replace(/\s+/g, ' ').trim();
+            if (/^Q:\s*/i.test(clean)) {
+              const qMatch = clean.match(/^Q:\s*(.*?)\s*A:\s*(.*)$/i);
+              if (qMatch) {
+                answer += `• **${qMatch[1]?.trim()}:** ${qMatch[2]?.trim()}\n`;
+              } else {
+                answer += `• **Question:** ${clean.replace(/^Q:\s*/i, '')}\n`;
+              }
+            } else if (/^\d+\.\s+/.test(clean)) {
+              answer += `• ${clean}\n`;
+            } else if (clean.includes(':')) {
+              const [label, ...val] = clean.split(':');
+              answer += `• **${label?.trim()}:** ${val.join(':').trim()}\n`;
+            } else if (clean.length > 20) {
+              answer += `• ${clean}\n`;
+            }
+          });
+          answer += '\n';
+        }
+      }
     }
 
-    answer += `*(Answer synthesized with structured RAG semantic extraction. Citations [#1], [#2] correspond to verified document passages.)*`;
+    answer += `*(Answer generated from organization documents. References [#1], [#2] correspond to verified source passages.)*`;
   }
 
   return {

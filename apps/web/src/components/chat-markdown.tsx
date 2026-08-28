@@ -1,13 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 
 interface ChatMarkdownProps {
   content: string;
 }
 
 export function ChatMarkdown({ content }: ChatMarkdownProps) {
-  // Normalize newlines and trim
   const normalized = content.replace(/\r\n/g, '\n').trim();
   const lines = normalized.split('\n');
   const elements: React.ReactNode[] = [];
@@ -29,15 +28,15 @@ export function ChatMarkdown({ content }: ChatMarkdownProps) {
         <ol
           key={`ol-${elements.length}`}
           style={{
-            margin: '0.85rem 0',
-            paddingLeft: '1.5rem',
+            margin: '0.65rem 0 0.9rem',
+            paddingLeft: '1.4rem',
             display: 'grid',
-            gap: '0.55rem',
+            gap: '0.45rem',
             lineHeight: 1.65,
           }}
         >
           {listItems.map((item, idx) => (
-            <li key={idx} style={{ color: 'var(--text)', fontSize: '0.94rem' }}>
+            <li key={idx} style={{ color: 'var(--text)', fontSize: '0.95rem' }}>
               {renderInlineFormatted(item)}
             </li>
           ))}
@@ -48,37 +47,22 @@ export function ChatMarkdown({ content }: ChatMarkdownProps) {
         <ul
           key={`ul-${elements.length}`}
           style={{
-            margin: '0.85rem 0',
+            margin: '0.65rem 0 0.9rem',
             paddingLeft: '1.25rem',
             display: 'grid',
-            gap: '0.65rem',
-            listStyleType: 'none',
+            gap: '0.5rem',
+            listStyleType: 'disc',
           }}
         >
           {listItems.map((item, idx) => (
             <li
               key={idx}
               style={{
-                position: 'relative',
-                paddingLeft: '1.2rem',
                 color: 'var(--text)',
                 lineHeight: 1.65,
-                fontSize: '0.94rem',
+                fontSize: '0.95rem',
               }}
             >
-              {/* Custom stylish bullet marker */}
-              <span
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  top: '0.58em',
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  background: 'var(--accent)',
-                  display: 'inline-block',
-                }}
-              />
               {renderInlineFormatted(item)}
             </li>
           ))}
@@ -91,23 +75,7 @@ export function ChatMarkdown({ content }: ChatMarkdownProps) {
     if (codeBlockContent.length === 0) return;
     const code = codeBlockContent.join('\n');
     elements.push(
-      <pre
-        key={`code-${elements.length}`}
-        style={{
-          background: 'var(--bg-soft)',
-          border: '1px solid var(--border)',
-          borderRadius: 10,
-          padding: '0.85rem 1.1rem',
-          overflowX: 'auto',
-          fontSize: '0.86rem',
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-          margin: '0.85rem 0',
-          color: 'var(--text)',
-          lineHeight: 1.5,
-        }}
-      >
-        <code>{code}</code>
-      </pre>
+      <CodeCalloutCard key={`code-${elements.length}`} code={code} />
     );
     codeBlockContent = [];
   }
@@ -140,9 +108,9 @@ export function ChatMarkdown({ content }: ChatMarkdownProps) {
         <h4
           key={`h4-${i}`}
           style={{
-            margin: '1.2rem 0 0.45rem',
-            fontSize: '0.98rem',
-            fontWeight: 750,
+            margin: '1.15rem 0 0.4rem',
+            fontSize: '1rem',
+            fontWeight: 700,
             color: 'var(--text)',
             letterSpacing: '-0.01em',
             display: 'flex',
@@ -164,14 +132,15 @@ export function ChatMarkdown({ content }: ChatMarkdownProps) {
         <h3
           key={`h3-${i}`}
           style={{
-            margin: '1.35rem 0 0.55rem',
-            fontSize: '1.12rem',
-            fontWeight: 800,
+            margin: '1.35rem 0 0.5rem',
+            fontSize: '1.15rem',
+            fontWeight: 750,
             color: 'var(--text)',
             letterSpacing: '-0.02em',
             display: 'flex',
             alignItems: 'center',
             gap: '0.45rem',
+            flexWrap: 'wrap',
           }}
         >
           {renderInlineFormatted(trimmed.replace(/^###\s+/, ''))}
@@ -187,7 +156,7 @@ export function ChatMarkdown({ content }: ChatMarkdownProps) {
         <h2
           key={`h2-${i}`}
           style={{
-            margin: '1.45rem 0 0.65rem',
+            margin: '1.5rem 0 0.6rem',
             fontSize: '1.25rem',
             fontWeight: 800,
             color: 'var(--text)',
@@ -223,14 +192,14 @@ export function ChatMarkdown({ content }: ChatMarkdownProps) {
       continue;
     }
 
-    // Italic note / Footnote
+    // Italic footnote
     if (trimmed.startsWith('*(') && trimmed.endsWith(')*')) {
       flushList();
       elements.push(
         <div
           key={`note-${i}`}
           style={{
-            margin: '1rem 0 0.4rem',
+            margin: '1.1rem 0 0.4rem',
             padding: '0.6rem 0.85rem',
             background: 'var(--bg-soft)',
             borderLeft: '3px solid var(--accent)',
@@ -247,7 +216,7 @@ export function ChatMarkdown({ content }: ChatMarkdownProps) {
       continue;
     }
 
-    // Paragraph
+    // Normal Paragraph
     flushList();
     elements.push(
       <p
@@ -255,7 +224,7 @@ export function ChatMarkdown({ content }: ChatMarkdownProps) {
         style={{
           margin: '0.65rem 0',
           lineHeight: 1.7,
-          fontSize: '0.94rem',
+          fontSize: '0.95rem',
           color: 'var(--text)',
         }}
       >
@@ -271,7 +240,7 @@ export function ChatMarkdown({ content }: ChatMarkdownProps) {
     <div
       className="chat-markdown-body"
       style={{
-        fontSize: '0.94rem',
+        fontSize: '0.95rem',
         lineHeight: 1.7,
         letterSpacing: '-0.01em',
         color: 'var(--text)',
@@ -282,9 +251,81 @@ export function ChatMarkdown({ content }: ChatMarkdownProps) {
   );
 }
 
+/** Callout card for code or templates (like ChatGPT's prompt response card) */
+function CodeCalloutCard({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    void navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div
+      style={{
+        margin: '1rem 0',
+        borderRadius: '12px',
+        border: '1px solid var(--border)',
+        background: 'var(--bg-soft)',
+        overflow: 'hidden',
+        boxShadow: 'var(--shadow-sm)',
+      }}
+    >
+      {/* Top Header Bar with Edit / Copy buttons */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0.45rem 0.85rem',
+          background: 'rgba(0, 0, 0, 0.03)',
+          borderBottom: '1px solid var(--border)',
+          fontSize: '0.78rem',
+          color: 'var(--muted)',
+        }}
+      >
+        <span style={{ fontWeight: 600 }}>Preview / Template</span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--muted)',
+            fontSize: '0.76rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.3rem',
+            padding: '0.2rem 0.4rem',
+            borderRadius: 6,
+          }}
+        >
+          {copied ? 'Copied ✓' : 'Copy'}
+        </button>
+      </div>
+
+      <pre
+        style={{
+          margin: 0,
+          padding: '0.85rem 1rem',
+          overflowX: 'auto',
+          fontSize: '0.88rem',
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+          color: 'var(--text)',
+          lineHeight: 1.55,
+        }}
+      >
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
 /** Helper to parse inline markdown formatting: **bold**, `code`, and [#1] citations */
 function renderInlineFormatted(text: string): React.ReactNode[] {
-  // Regex splitting by bold (**...**), inline code (`...`), and citations ([#1], [1], [#12])
   const regex = /(\*\*.*?\*\*|`.*?`|\[#?\d+\])/g;
   const parts = text.split(regex);
 
