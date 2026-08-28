@@ -31,11 +31,14 @@ export default function ChatPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const latestPromptRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-scroll to bottom whenever new message turns arrive
+  // Focus and scroll smoothly to the user's latest prompt so the response starts right below it
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (turns.length > 0) {
+      latestPromptRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   }, [turns, busy]);
 
   if (!activeOrg || !user) return null;
@@ -182,10 +185,15 @@ export default function ChatPage() {
           </div>
         ) : (
           <div className="gpt-turns-list">
-            {turns.map((turn) => {
+            {turns.map((turn, index) => {
               const isUser = turn.role === 'user';
+              const isLatestUserTurn = isUser && index >= turns.length - 2;
               return (
-                <div key={turn.id} className={`gpt-turn-row ${isUser ? 'user-row' : 'assistant-row'}`}>
+                <div
+                  key={turn.id}
+                  ref={isLatestUserTurn ? latestPromptRef : undefined}
+                  className={`gpt-turn-row ${isUser ? 'user-row' : 'assistant-row'}`}
+                >
                   {isUser ? (
                     <div className="gpt-user-message-bubble">
                       {turn.content}
