@@ -6,9 +6,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { isSupportedMime, processDocument } from '@worksyzo/ingest';
-import { queryOne, queryRows, withTenant, type DocumentRow } from '@worksyzo/db';
+import { queryOne, queryRows, withTenant, type DocumentRow, type DocumentChunkRow } from '@worksyzo/db';
 import { documentStorageKey, getObjectStorage } from '@worksyzo/storage';
-import { AUDIT_ACTIONS, type DocumentView } from '@worksyzo/shared';
+import { AUDIT_ACTIONS, type DocumentView, type DocumentInspectView, type DocumentChunkView, type DocumentPipelineStage } from '@worksyzo/shared';
 import { AuditService } from '../audit/audit.service';
 
 const MAX_BYTES = 12 * 1024 * 1024;
@@ -41,6 +41,102 @@ export class DocumentsService {
       );
       if (!row) throw new NotFoundException('Document not found');
       return toView(row);
+    });
+  }
+
+  async inspect(orgId: string, userId: string, documentId: string): Promise<DocumentInspectView> {
+    return withTenant({ orgId, userId }, async (client) => {
+      const docRow = await queryOne<DocumentRow>(
+        client,
+        'SELECT * FROM documents WHERE id = $1 AND deleted_at IS NULL',
+        [documentId],
+      );
+      if (!docRow) throw new NotFoundException('Document not found');
+
+      const chunkRows = await queryRows<DocumentChunkRow>(
+        client,
+        `SELECT id, org_id, document_id, chunk_index, content, token_count, embedding::text AS embedding_text, metadata, created_at
+         FROM document_chunks
+         WHERE document_id = $1
+         ORDER BY chunk_index ASC`,
+        [documentId],
+      );
+
+      const chunks: DocumentChunkView[] = chunkRows.map((row) => {
+        let embeddingPreview: number[] = [];
+        let embeddingDimensions = 1536;
+        if (row.embedding_text) {
+          try {
+            const raw = row.embedding_text.replace(/[\[\]]/g, '').split(',');
+            embeddingDimensions = raw.length;
+            embeddingPreview = raw.slice(0, 12).map((v) => Number(parseFloat(v).toFixed(5)));
+          } catch {
+            // fallback
+          }
+        }
+        return {
+          id: row.id,
+          chunkIndex: row.chunk_index,
+          content: row.content,
+          tokenCount: row.token_count,
+          charCount: row.content.length,
+          embeddingDimensions,
+          embeddingPreview,
+          createdAt: row.created_at.toISOString(),
+        };
+      });
+
+      const totalChunks = chunks.length;
+      const totalTokens = chunks.reduce((acc, c) => acc + c.tokenCount, 0);
+      const totalCharacters = chunks.reduce((acc, c) => acc + c.charCount, 0);
+      const averageTokensPerChunk = totalChunks > 0 ? Math.round(totalTokens / totalChunks) : 0;
+
+      const isReady = docRow.status === 'ready';
+      const isProcessing = docRow.status === 'processing';
+      const isFailed = docRow.status === 'failed';
+
+      const pipelineStages: DocumentPipelineStage[] = [
+        {
+          stage: 'extract',
+          name: '1. Text & Stream Extraction',
+          description: `Extracted raw text from binary format (${docRow.mime_type}) using specialized parser.`,
+          status: isReady || isProcessing ? 'completed' : isFailed ? 'failed' : 'pending',
+          details: totalCharacters > 0 ? `${totalCharacters.toLocaleString()} characters extracted` : undefined,
+        },
+        {
+          stage: 'chunk',
+          name: '2. Sliding-Window Semantic Chunking',
+          description: 'Segmented text into ~600-token blocks with 80-token overlap to maintain semantic continuity across boundaries.',
+          status: isReady ? 'completed' : isProcessing ? 'in_progress' : isFailed ? 'failed' : 'pending',
+          details: totalChunks > 0 ? `${totalChunks} chunks generated (~${averageTokensPerChunk} avg tokens/chunk)` : undefined,
+        },
+        {
+          stage: 'embed',
+          name: '3. High-Dimensional Vectorization',
+          description: 'Vectorized each text chunk into a 1536-dimensional semantic dense embedding vector.',
+          status: isReady ? 'completed' : isProcessing ? 'in_progress' : isFailed ? 'failed' : 'pending',
+          details: totalChunks > 0 ? `${totalChunks} vectors generated (1536 dims)` : undefined,
+        },
+        {
+          stage: 'index',
+          name: '4. PostgreSQL pgvector Storage & HNSW Indexing',
+          description: 'Stored chunks in document_chunks with cosine distance (<->) vector index for instant RAG search.',
+          status: isReady ? 'completed' : isProcessing ? 'in_progress' : isFailed ? 'failed' : 'pending',
+          details: isReady ? 'Indexed & active for AI chat citations' : undefined,
+        },
+      ];
+
+      return {
+        document: toView(docRow),
+        totalChunks,
+        totalTokens,
+        totalCharacters,
+        averageTokensPerChunk,
+        embeddingModel: 'text-embedding-3-small (1536 dims)',
+        vectorDimensions: 1536,
+        pipelineStages,
+        chunks,
+      };
     });
   }
 

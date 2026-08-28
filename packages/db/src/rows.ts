@@ -90,6 +90,18 @@ export interface DocumentRow {
   deleted_at: Date | null;
 }
 
+export interface DocumentChunkRow {
+  id: string;
+  org_id: string;
+  document_id: string;
+  chunk_index: number;
+  content: string;
+  token_count: number;
+  embedding_text?: string;
+  metadata: Record<string, unknown>;
+  created_at: Date;
+}
+
 export interface MemoryRow {
   id: string;
   org_id: string;

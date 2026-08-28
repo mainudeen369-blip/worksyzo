@@ -77,6 +77,37 @@ export interface DocumentView {
   updatedAt: string;
 }
 
+export interface DocumentChunkView {
+  id: string;
+  chunkIndex: number;
+  content: string;
+  tokenCount: number;
+  charCount: number;
+  embeddingDimensions: number;
+  embeddingPreview: number[];
+  createdAt: string;
+}
+
+export interface DocumentPipelineStage {
+  stage: 'extract' | 'chunk' | 'embed' | 'index';
+  name: string;
+  description: string;
+  status: 'completed' | 'in_progress' | 'pending' | 'failed';
+  details?: string;
+}
+
+export interface DocumentInspectView {
+  document: DocumentView;
+  totalChunks: number;
+  totalTokens: number;
+  totalCharacters: number;
+  averageTokensPerChunk: number;
+  embeddingModel: string;
+  vectorDimensions: number;
+  pipelineStages: DocumentPipelineStage[];
+  chunks: DocumentChunkView[];
+}
+
 export interface CitationView {
   documentId: string;
   title: string;

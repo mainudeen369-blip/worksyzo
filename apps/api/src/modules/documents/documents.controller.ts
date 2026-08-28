@@ -36,6 +36,12 @@ export class DocumentsController {
     return this.documents.get(tenant.orgId, tenant.userId, documentId);
   }
 
+  @Get(':documentId/inspect')
+  @RequirePermission('document:read')
+  inspect(@Tenant() tenant: TenantScope, @Param('documentId') documentId: string) {
+    return this.documents.inspect(tenant.orgId, tenant.userId, documentId);
+  }
+
   @Post()
   @RequirePermission('document:create')
   @UseInterceptors(
