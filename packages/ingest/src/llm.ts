@@ -269,12 +269,23 @@ export async function chatCompletion(
 
   let answer = '';
   if (contextSnippets.length === 0) {
-    answer = `I could not find relevant information in the organization documents for "${question}". Please upload relevant policies or files to the Documents section.`;
+    answer = `I could not find relevant information in the organization documents for **"${question}"**.\n\nPlease upload relevant policies or documentation to the **Documents** section to enable AI query extraction.`;
   } else {
     answer = `Based on your organization documents for **"${question}"**:\n\n`;
     contextSnippets.slice(0, 4).forEach((snip, idx) => {
-      const cleanExcerpt = snip.excerpt.replace(/\s+/g, ' ').trim();
-      answer += `• **[#${idx + 1}] ${snip.title}:** ${cleanExcerpt}\n\n`;
+      let cleanExcerpt = snip.excerpt.replace(/\s+/g, ' ').trim();
+      
+      // Split clauses if the excerpt has numbered points (e.g., 1. Casual leave - ... 2. Earned leave - ...)
+      if (/\b\d+\.\s+/.test(cleanExcerpt)) {
+        const clauses = cleanExcerpt.split(/(?=\b\d+\.\s+)/).map((c) => c.trim()).filter(Boolean);
+        answer += `### [#${idx + 1}] ${snip.title}\n`;
+        clauses.forEach((clause) => {
+          answer += `• ${clause}\n`;
+        });
+        answer += '\n';
+      } else {
+        answer += `• **[#${idx + 1}] ${snip.title}:** ${cleanExcerpt}\n\n`;
+      }
     });
     answer += `*(Answer synthesized via local document search. Connect Groq, Gemini, or OpenAI API key in settings for generative conversational mode.)*`;
   }
