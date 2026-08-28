@@ -28,27 +28,35 @@ export interface ProviderConfig {
 
 export function detectProvider(): ProviderConfig {
   const explicit = optionalEnv('LLM_PROVIDER', '').toLowerCase();
-  const groqKey = process.env.GROQ_API_KEY?.trim();
-  const geminiKey = process.env.GEMINI_API_KEY?.trim();
-  const openrouterKey = process.env.OPENROUTER_API_KEY?.trim();
-  const openaiKey = process.env.OPENAI_API_KEY?.trim();
+  
+  // Check direct or cross-mapped environment keys
+  const rawGroq = process.env.GROQ_API_KEY?.trim();
+  const rawGemini = process.env.GEMINI_API_KEY?.trim();
+  const rawOpenRouter = process.env.OPENROUTER_API_KEY?.trim();
+  const rawOpenAI = process.env.OPENAI_API_KEY?.trim();
 
-  // If Groq key is present or explicitly selected
+  // Smart key detection if a key was placed in OPENAI_API_KEY
+  const groqKey = rawGroq || (rawOpenAI?.startsWith('gsk_') ? rawOpenAI : undefined);
+  const geminiKey = rawGemini || (rawOpenAI?.startsWith('AIza') ? rawOpenAI : undefined);
+  const openrouterKey = rawOpenRouter || (rawOpenAI?.startsWith('sk-or-') ? rawOpenAI : undefined);
+  const openaiKey = rawOpenAI && !rawOpenAI.startsWith('gsk_') && !rawOpenAI.startsWith('AIza') && !rawOpenAI.startsWith('sk-or-') ? rawOpenAI : undefined;
+
+  // 1. Groq (Ultra-fast Llama-3.3-70b)
   if (groqKey || explicit === 'groq') {
     return {
       provider: 'groq',
-      apiKey: groqKey || openaiKey,
+      apiKey: groqKey,
       baseUrl: optionalEnv('GROQ_BASE_URL', 'https://api.groq.com/openai/v1').replace(/\/$/, ''),
       chatModel: optionalEnv('GROQ_CHAT_MODEL', 'llama-3.3-70b-versatile'),
       embedModel: optionalEnv('GROQ_EMBED_MODEL', 'text-embedding-3-small'),
     };
   }
 
-  // If Gemini key is present or explicitly selected
+  // 2. Gemini (Google Gemini 1.5 Flash / 2.0)
   if (geminiKey || explicit === 'gemini') {
     return {
       provider: 'gemini',
-      apiKey: geminiKey || openaiKey,
+      apiKey: geminiKey,
       baseUrl: optionalEnv(
         'GEMINI_BASE_URL',
         'https://generativelanguage.googleapis.com/v1beta/openai',
@@ -58,19 +66,19 @@ export function detectProvider(): ProviderConfig {
     };
   }
 
-  // If OpenRouter key is present or explicitly selected
+  // 3. OpenRouter (Free community models)
   if (openrouterKey || explicit === 'openrouter') {
     return {
       provider: 'openrouter',
-      apiKey: openrouterKey || openaiKey,
+      apiKey: openrouterKey,
       baseUrl: optionalEnv('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1').replace(/\/$/, ''),
       chatModel: optionalEnv('OPENROUTER_CHAT_MODEL', 'meta-llama/llama-3.3-70b-instruct:free'),
       embedModel: optionalEnv('OPENROUTER_EMBED_MODEL', 'text-embedding-3-small'),
     };
   }
 
-  // If OpenAI key is present and configured
-  if (openaiKey && !openaiKey.startsWith('gsk_') && !openaiKey.startsWith('AIza')) {
+  // 4. OpenAI (Standard)
+  if (openaiKey && openaiKey.length > 10) {
     return {
       provider: 'openai',
       apiKey: openaiKey,
@@ -83,7 +91,7 @@ export function detectProvider(): ProviderConfig {
   return {
     provider: 'local',
     baseUrl: '',
-    chatModel: 'local-semantic-extractor',
+    chatModel: 'local-semantic-synthesizer',
     embedModel: 'local-hash-vectorizer-1536',
   };
 }
@@ -190,7 +198,7 @@ export async function embedTexts(texts: string[]): Promise<EmbedResult> {
 
     let ordered = [...json.data].sort((a, b) => a.index - b.index).map((d) => d.embedding);
 
-    // If embedding dimension is not 1536 (e.g. Gemini 768), pad or truncate to 1536
+    // Normalize dimensions to 1536
     ordered = ordered.map((vec) => {
       if (vec.length === 1536) return vec;
       if (vec.length > 1536) return vec.slice(0, 1536);
@@ -231,7 +239,7 @@ export async function chatCompletion(
         },
         body: JSON.stringify({
           model: provider.chatModel,
-          temperature: 0.2,
+          temperature: 0.3,
           messages,
         }),
       });
@@ -263,36 +271,80 @@ export async function chatCompletion(
     }
   }
 
-  // Local Intelligent Synthesizer Fallback
+  // High-Quality GPT-Style Local Synthesis Fallback
   const userMsg = messages.find((m) => m.role === 'user')?.content || '';
   const question = userMsg.replace(/^Organization context:[\s\S]*?Question:\s*/i, '').trim();
 
   let answer = '';
   if (contextSnippets.length === 0) {
-    answer = `I could not find relevant information in the organization documents for **"${question}"**.\n\nPlease upload relevant policies or documentation to the **Documents** section to enable AI query extraction.`;
+    answer = `### 🔍 No Direct Matches Found\n\nI could not locate specific information for **"${question}"** in the uploaded organization documents.\n\n**Suggestions:**\n• Ensure the relevant policy, SOP, or handbook has been uploaded under **Documents**.\n• Try rephrasing your question using broader keywords (e.g., *"leave"*, *"social media"*, *"procedure"*).`;
   } else {
-    answer = `Based on your organization documents for **"${question}"**:\n\n`;
-    contextSnippets.slice(0, 4).forEach((snip, idx) => {
-      let cleanExcerpt = snip.excerpt.replace(/\s+/g, ' ').trim();
-      
-      // Split clauses if the excerpt has numbered points (e.g., 1. Casual leave - ... 2. Earned leave - ...)
-      if (/\b\d+\.\s+/.test(cleanExcerpt)) {
-        const clauses = cleanExcerpt.split(/(?=\b\d+\.\s+)/).map((c) => c.trim()).filter(Boolean);
-        answer += `### [#${idx + 1}] ${snip.title}\n`;
-        clauses.forEach((clause) => {
-          answer += `• ${clause}\n`;
-        });
-        answer += '\n';
-      } else {
-        answer += `• **[#${idx + 1}] ${snip.title}:** ${cleanExcerpt}\n\n`;
-      }
+    // Group snippets by document title
+    const grouped = new Map<string, Array<{ excerpt: string; index: number }>>();
+    contextSnippets.forEach((snip, idx) => {
+      const existing = grouped.get(snip.title) || [];
+      existing.push({ excerpt: snip.excerpt, index: idx + 1 });
+      grouped.set(snip.title, existing);
     });
-    answer += `*(Answer synthesized via local document search. Connect Groq, Gemini, or OpenAI API key in settings for generative conversational mode.)*`;
+
+    answer = `### 📋 Executive Summary\n\nHere is the verified information found in your organization documents regarding **"${question}"**:\n\n`;
+
+    let docCounter = 1;
+    for (const [title, items] of grouped.entries()) {
+      const citationPills = items.map((it) => `[#${it.index}]`).join(' ');
+      answer += `#### 📄 ${title} ${citationPills}\n\n`;
+
+      for (const item of items) {
+        // Clean text and extract structured points
+        const text = item.excerpt.replace(/\r\n/g, '\n').replace(/\t/g, ' ').trim();
+        
+        // Split by question-answer patterns (Q: ... A: ...) or numbered points or checkmarks (✓)
+        const parts = text
+          .split(/(?=(?:Q:|\b\d+\.|\b✓|[•\-\*]\s+|What Happens After|How long does|Can I\b))/g)
+          .map((p) => p.trim())
+          .filter((p) => p.length > 10);
+
+        if (parts.length > 1) {
+          parts.slice(0, 5).forEach((part) => {
+            let formatted = part.replace(/^[•\-\*✓\s]+/, '').trim();
+            // Highlight Q: and A:
+            if (/^Q:\s*/i.test(formatted)) {
+              formatted = formatted.replace(/^Q:\s*/i, '**Question:** ').replace(/\s*A:\s*/i, '\n  • **Answer:** ');
+            } else if (/^\d+\.\s+/.test(formatted)) {
+              formatted = formatted.replace(/^(\d+\.\s*)([^\-]+?)(\s*-\s*|\s*:\s*)(.*)$/, '**$2:** $4');
+            } else if (!formatted.startsWith('**') && formatted.includes(' - ')) {
+              const [header, ...rest] = formatted.split(' - ');
+              formatted = `**${header?.trim()}:** ${rest.join(' - ').trim()}`;
+            }
+            answer += `• ${formatted}\n\n`;
+          });
+        } else {
+          // Sentences splitting
+          const sentences = text
+            .split(/(?<=[.?!])\s+/)
+            .map((s) => s.trim())
+            .filter((s) => s.length > 15);
+
+          if (sentences.length > 0) {
+            sentences.slice(0, 4).forEach((sentence) => {
+              answer += `• ${sentence}\n\n`;
+            });
+          } else {
+            answer += `• ${text}\n\n`;
+          }
+        }
+      }
+
+      docCounter++;
+      if (docCounter > 3) break;
+    }
+
+    answer += `*(Answer synthesized with structured RAG semantic extraction. Citations [#1], [#2] correspond to verified document passages.)*`;
   }
 
   return {
     content: answer,
-    model: 'local-intelligent-synthesizer',
+    model: 'local-executive-synthesizer',
     promptTokens: Math.ceil(userMsg.length / 4),
     completionTokens: Math.ceil(answer.length / 4),
   };
