@@ -14,6 +14,8 @@ import {
   speakText,
 } from '@/lib/assistant-speech';
 
+const WORKSYZO_AVATAR_GLB = '/avatars/worksyzo-michelle.glb';
+
 const AvatarScene = dynamic(
   () => import('@/components/avatar/avatar-scene').then((m) => m.AvatarScene),
   { ssr: false, loading: () => <div className="gpt-avatar-loading">Loading Worksyzo…</div> },
@@ -230,7 +232,12 @@ export default function ChatPage() {
       <div className="gpt-chat-split">
         <aside className="gpt-avatar-stage" aria-label="Worksyzo 3D assistant">
           <div className="gpt-avatar-canvas">
-            <AvatarScene mood={avatarMood} variant="stage" statusLabel={avatarStatus} />
+            <AvatarScene
+              mood={avatarMood}
+              avatarUrl={WORKSYZO_AVATAR_GLB}
+              variant="stage"
+              statusLabel={avatarStatus}
+            />
           </div>
           <p className="gpt-avatar-caption">
             Hi {user.name?.split(' ')[0] ?? 'there'} — I&apos;m Worksyzo, your AI assistant for{' '}

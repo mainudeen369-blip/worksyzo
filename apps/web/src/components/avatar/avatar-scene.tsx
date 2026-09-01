@@ -1,23 +1,19 @@
 'use client';
 
-import { Suspense, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import {
-  AnimationMixer,
-  AnimationUtils,
   Box3,
   LoopRepeat,
   Vector3,
   type AnimationAction,
-  type AnimationClip,
   type Group,
   type Object3D,
 } from 'three';
 
 /** Human female assistant with face & eyes (Mixamo Michelle, bundled locally). */
-export const DEFAULT_AVATAR_GLB =
-  process.env.NEXT_PUBLIC_AVATAR_GLB_URL ?? '/avatars/worksyzo-michelle.glb';
+export const DEFAULT_AVATAR_GLB = '/avatars/worksyzo-michelle.glb';
 
 export const LEGACY_CARTOON_GLB = '/avatars/worksyzo-assistant.glb';
 export const LEGACY_ROBOT_GLB = '/avatars/worksyzo-bot.glb';
@@ -32,21 +28,16 @@ const PORTRAIT = {
   lookAt: [0, 0.64, 0] as [number, number, number],
 };
 
-function isGobkitAvatar(url: string): boolean {
-  return url.includes('assistant') || url.includes('minion');
-}
-
-function isHumanoidAvatar(url: string): boolean {
-  return (
-    url.includes('human') ||
-    url.includes('michelle') ||
-    url.includes('xbot') ||
-    url.includes('bot.glb')
-  );
+/** Never load the old yellow minion, even from cached bundles or legacy env vars. */
+export function resolveAvatarUrl(url?: string): string {
+  const raw = (url ?? process.env.NEXT_PUBLIC_AVATAR_GLB_URL ?? DEFAULT_AVATAR_GLB).split('?')[0] ?? '';
+  if (!raw || raw.includes('assistant') || raw.includes('minion')) return DEFAULT_AVATAR_GLB;
+  return raw;
 }
 
 function isMichelleAvatar(url: string): boolean {
-  return url.includes('michelle');
+  const path = url.split('?')[0] ?? url;
+  return path.includes('michelle') || path.includes('assistant');
 }
 
 type ActionMap = Record<string, AnimationAction | null>;
@@ -104,14 +95,6 @@ function playAction(action: AnimationAction | null | undefined, loop = true) {
   };
 }
 
-function buildGobkitClips(base?: AnimationClip) {
-  if (!base) return null;
-  return {
-    idle: AnimationUtils.subclip(base, 'idle', 0, 29, 24),
-    attack: AnimationUtils.subclip(base, 'attack', 30, 59, 24),
-  };
-}
-
 interface AvatarModelProps {
   mood: AvatarMood;
   url: string;
@@ -155,67 +138,6 @@ function HumanoidAvatarModel({ mood, url }: AvatarModelProps) {
   );
 }
 
-function GobkitAvatarModel({ mood, url }: AvatarModelProps) {
-  const group = useRef<Group>(null);
-  const gltf = useGLTF(url);
-  const mixer = useRef<AnimationMixer | null>(null);
-  const active = useRef<AnimationAction | null>(null);
-  useCenteredScene(gltf.scene, 1.5);
-
-  const clips = useMemo(() => buildGobkitClips(gltf.animations[0]), [gltf.animations]);
-
-  useEffect(() => {
-    if (!group.current) return;
-    mixer.current = new AnimationMixer(group.current);
-    return () => {
-      mixer.current?.stopAllAction();
-      mixer.current = null;
-    };
-  }, [gltf]);
-
-  useEffect(() => {
-    const m = mixer.current;
-    if (!m || !clips) return;
-
-    active.current?.fadeOut(0.25);
-    const pick =
-      mood === 'celebrate' || mood === 'success' || mood === 'talking' || mood === 'thinking'
-        ? clips.attack
-        : clips.idle;
-
-    const action = m.clipAction(pick);
-    const loop = mood !== 'success';
-    action.reset().fadeIn(0.25);
-    action.setLoop(LoopRepeat, loop ? Infinity : 1);
-    if (!loop) action.clampWhenFinished = true;
-    action.play();
-    active.current = action;
-
-    return () => {
-      action.fadeOut(0.25);
-    };
-  }, [clips, mood]);
-
-  useFrame((state, delta) => {
-    mixer.current?.update(delta);
-    if (!group.current) return;
-    const t = state.clock.elapsedTime;
-    if (mood === 'talking') group.current.position.y = Math.sin(t * 10) * 0.012;
-    else if (mood === 'thinking') group.current.rotation.y = Math.sin(t * 0.9) * 0.08;
-  });
-
-  return (
-    <group ref={group} dispose={null}>
-      <primitive object={gltf.scene} />
-    </group>
-  );
-}
-
-function AvatarModel({ mood, url }: AvatarModelProps) {
-  if (isGobkitAvatar(url)) return <GobkitAvatarModel mood={mood} url={url} />;
-  return <HumanoidAvatarModel mood={mood} url={url} />;
-}
-
 function AvatarFallback() {
   return (
     <group position={[0, 0.35, 0]}>
@@ -249,12 +171,12 @@ interface AvatarSceneProps {
 
 export function AvatarScene({
   mood,
-  avatarUrl = DEFAULT_AVATAR_GLB,
+  avatarUrl,
   className,
   variant = 'stage',
   statusLabel,
 }: AvatarSceneProps) {
-  const human = isHumanoidAvatar(avatarUrl) || !isGobkitAvatar(avatarUrl);
+  const modelUrl = resolveAvatarUrl(avatarUrl);
   const camZ = variant === 'compact' ? PORTRAIT.position[2] - 0.25 : PORTRAIT.position[2];
 
   return (
@@ -264,9 +186,7 @@ export function AvatarScene({
         width: '100%',
         height: '100%',
         position: 'relative',
-        background: human
-          ? 'linear-gradient(165deg, #0f172a 0%, #334155 38%, #1e1b4b 100%)'
-          : 'linear-gradient(165deg, #1e1b4b 0%, #6d28d9 42%, #0f172a 100%)',
+        background: 'linear-gradient(165deg, #0f172a 0%, #334155 38%, #1e1b4b 100%)',
         overflow: 'hidden',
       }}
     >
@@ -286,7 +206,7 @@ export function AvatarScene({
         <pointLight position={[0, 1.4, 1.8]} intensity={0.5} color="#fef3c7" />
         <hemisphereLight args={['#f8fafc', '#312e81', 0.55]} />
         <Suspense fallback={<AvatarFallback />}>
-          <AvatarModel mood={mood} url={avatarUrl} />
+          <HumanoidAvatarModel mood={mood} url={modelUrl} />
         </Suspense>
       </Canvas>
       {statusLabel ? (
@@ -312,4 +232,3 @@ export function AvatarScene({
 }
 
 useGLTF.preload(DEFAULT_AVATAR_GLB);
-useGLTF.preload(LEGACY_XBOT_GLB);
