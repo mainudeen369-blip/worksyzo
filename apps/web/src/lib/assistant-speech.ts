@@ -54,6 +54,57 @@ function getSpeechRecognition(): SpeechRecognitionCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+const FEMALE_HINT =
+  /female|woman|zira|samantha|hazel|karen|susan|veena|priya|natasha|jenny|aria|sara|linda|heera|lekha|neerja|sonia|emma|lisa|amy|joanna|victoria/i;
+const MALE_HINT = /\bmale\b|david|mark|guy|ravi|james|daniel|george|ryan|alex\b/i;
+
+function pickFemaleVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined {
+  const en = voices.filter((v) => v.lang.toLowerCase().startsWith('en'));
+
+  const ranked = en
+    .map((voice) => {
+      let score = 0;
+      const name = voice.name;
+      const lang = voice.lang.toLowerCase();
+
+      if (FEMALE_HINT.test(name)) score += 50;
+      if (MALE_HINT.test(name)) score -= 40;
+      if (lang.startsWith('en-in')) score += 12;
+      if (lang.startsWith('en-gb')) score += 8;
+      if (/google.*english.*female/i.test(name)) score += 30;
+      if (/microsoft.*zira|microsoft.*heera|microsoft.*hazel/i.test(name)) score += 28;
+      if (voice.default && FEMALE_HINT.test(name)) score += 5;
+
+      return { voice, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const best = ranked.find((r) => r.score > 0)?.voice;
+  if (best) return best;
+
+  return en.find((v) => !MALE_HINT.test(v.name)) ?? en[0];
+}
+
+let voicesReady: Promise<SpeechSynthesisVoice[]> | null = null;
+
+function loadVoices(): Promise<SpeechSynthesisVoice[]> {
+  if (typeof window === 'undefined' || !window.speechSynthesis) {
+    return Promise.resolve([]);
+  }
+
+  const existing = window.speechSynthesis.getVoices();
+  if (existing.length > 0) return Promise.resolve(existing);
+
+  if (!voicesReady) {
+    voicesReady = new Promise((resolve) => {
+      const finish = () => resolve(window.speechSynthesis.getVoices());
+      window.speechSynthesis.onvoiceschanged = finish;
+      setTimeout(finish, 250);
+    });
+  }
+  return voicesReady;
+}
+
 export interface ListenOptions {
   onInterim?: (text: string) => void;
   onError?: (message: string) => void;
@@ -124,25 +175,32 @@ export function speakText(
     return () => undefined;
   }
 
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(cleaned);
-  utterance.lang = 'en-IN';
-  utterance.rate = 1;
-  utterance.pitch = 1;
+  let cancelled = false;
 
-  const voices = window.speechSynthesis.getVoices();
-  const preferred =
-    voices.find((v) => v.lang.startsWith('en') && /google|natural|zira|samantha/i.test(v.name)) ??
-    voices.find((v) => v.lang.startsWith('en'));
-  if (preferred) utterance.voice = preferred;
+  void loadVoices().then((voices) => {
+    if (cancelled) return;
 
-  utterance.onstart = () => onStart?.();
-  utterance.onend = () => onEnd?.();
-  utterance.onerror = () => onEnd?.();
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(cleaned);
+    utterance.lang = 'en-IN';
+    utterance.rate = 0.98;
+    utterance.pitch = 1.08;
 
-  window.speechSynthesis.speak(utterance);
+    const female = pickFemaleVoice(voices);
+    if (female) {
+      utterance.voice = female;
+      utterance.lang = female.lang;
+    }
+
+    utterance.onstart = () => onStart?.();
+    utterance.onend = () => onEnd?.();
+    utterance.onerror = () => onEnd?.();
+
+    window.speechSynthesis.speak(utterance);
+  });
 
   return () => {
+    cancelled = true;
     window.speechSynthesis.cancel();
     onEnd?.();
   };

@@ -233,7 +233,8 @@ export default function ChatPage() {
             <AvatarScene mood={avatarMood} variant="stage" statusLabel={avatarStatus} />
           </div>
           <p className="gpt-avatar-caption">
-            Hi {user.name?.split(' ')[0] ?? 'there'} — ask me anything about <strong>{activeOrg.name}</strong> documents.
+            Hi {user.name?.split(' ')[0] ?? 'there'} — I&apos;m Worksyzo, your AI assistant for{' '}
+            <strong>{activeOrg.name}</strong>. Ask me anything or use voice.
           </p>
         </aside>
 
