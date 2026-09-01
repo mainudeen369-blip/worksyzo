@@ -307,12 +307,13 @@ html[data-theme='dark'] .badge-success {
   background: var(--bg-soft);
 }
 
-/* Floating Theme Toggle FAB */
+/* Floating Theme Toggle FAB — top-right so it does not cover the AI assistant (bottom-right) */
 .theme-fab {
   position: fixed;
+  top: 1.25rem;
   right: 1.25rem;
-  bottom: 1.25rem;
-  z-index: 60;
+  bottom: auto;
+  z-index: 55;
   width: 2.75rem;
   height: 2.75rem;
   border-radius: var(--radius-full);
@@ -332,6 +333,18 @@ html[data-theme='dark'] .badge-success {
 .theme-fab:hover {
   transform: scale(1.06);
   box-shadow: var(--shadow-lg);
+}
+
+@media (max-width: 768px) {
+  .theme-fab {
+    top: 0.85rem;
+    right: 0.85rem;
+  }
+
+  /* Below mobile app topbar so it does not cover org name */
+  .theme-fab.theme-fab-app {
+    top: 4.25rem;
+  }
 }
 
 /* Custom modern scrollbars across app */

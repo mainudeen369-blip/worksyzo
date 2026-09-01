@@ -1,5 +1,6 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 type Theme = 'dark' | 'light';
@@ -11,7 +12,9 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeToggle() {
+  const pathname = usePathname();
   const [theme, setTheme] = useState<Theme>('light');
+  const inAppShell = pathname?.startsWith('/app') ?? false;
 
   useEffect(() => {
     const stored = window.localStorage.getItem(STORAGE_KEY) as Theme | null;
@@ -30,7 +33,7 @@ export function ThemeToggle() {
   return (
     <button
       type="button"
-      className="theme-fab"
+      className={`theme-fab${inAppShell ? ' theme-fab-app' : ''}`}
       onClick={toggle}
       aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
       title={theme === 'dark' ? 'Switch to Light mode' : 'Switch to Dark mode'}
