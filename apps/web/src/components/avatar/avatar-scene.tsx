@@ -1,18 +1,21 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useRef } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import {
   AnimationMixer,
   AnimationUtils,
+  Box3,
   LoopRepeat,
+  Vector3,
   type AnimationAction,
   type AnimationClip,
   type Group,
+  type Object3D,
 } from 'three';
 
-/** Cartoon assistant (Gobkit CC0 minion) — bundled locally. */
+/** Cartoon assistant (Gobkit CC0) — bundled locally. */
 export const DEFAULT_AVATAR_GLB =
   process.env.NEXT_PUBLIC_AVATAR_GLB_URL ?? '/avatars/worksyzo-assistant.glb';
 
@@ -20,25 +23,38 @@ export const LEGACY_ROBOT_GLB = '/avatars/worksyzo-bot.glb';
 
 export type AvatarMood = 'idle' | 'thinking' | 'talking' | 'success' | 'celebrate';
 
-const CAMERA = {
-  cartoon: {
-    position: [0, 0.72, 3.1] as [number, number, number],
-    fov: 28,
-    target: [0, 0.52, 0] as [number, number, number],
-    scale: 1.25,
-    yOffset: -0.28,
-  },
-  robot: {
-    position: [0, 1.05, 5.6] as [number, number, number],
-    fov: 30,
-    target: [0, 0.9, 0] as [number, number, number],
-    scale: 0.48,
-    yOffset: -0.75,
-  },
+/** Portrait camera — framed on head + upper body. */
+const PORTRAIT = {
+  position: [0, 0.42, 2.15] as [number, number, number],
+  fov: 34,
+  lookAt: [0, 0.38, 0] as [number, number, number],
 };
 
 function isCartoonAvatar(url: string): boolean {
   return url.includes('assistant') || url.includes('minion');
+}
+
+/** Center model at origin and scale so full character (face to feet) fits in view. */
+function useCenteredScene(scene: Object3D, targetHeight = 1.55) {
+  useLayoutEffect(() => {
+    scene.updateMatrixWorld(true);
+    const box = new Box3().setFromObject(scene);
+    if (box.isEmpty()) return;
+
+    const size = box.getSize(new Vector3());
+    const center = box.getCenter(new Vector3());
+
+    scene.position.x -= center.x;
+    scene.position.y -= center.y;
+    scene.position.z -= center.z;
+
+    const height = Math.max(size.y, 0.001);
+    const scale = targetHeight / height;
+    scene.scale.setScalar(scale);
+
+    // Gobkit models face +Z; ensure character faces the camera on +Z axis.
+    scene.rotation.y = 0;
+  }, [scene, targetHeight]);
 }
 
 function playAction(action: AnimationAction | null | undefined, loop = true) {
@@ -67,7 +83,7 @@ function RobotAvatarModel({ mood, url }: AvatarModelProps) {
   const group = useRef<Group>(null);
   const gltf = useGLTF(url);
   const { actions } = useAnimations(gltf.animations, group);
-  const profile = CAMERA.robot;
+  useCenteredScene(gltf.scene, 1.65);
 
   useEffect(() => {
     const a = actions;
@@ -83,25 +99,23 @@ function RobotAvatarModel({ mood, url }: AvatarModelProps) {
   useFrame((state, delta) => {
     if (!group.current) return;
     const t = state.clock.elapsedTime;
-    const baseY = profile.yOffset;
 
     if (mood === 'thinking') {
-      group.current.rotation.y = Math.sin(t * 0.7) * 0.18;
+      group.current.rotation.y = Math.sin(t * 0.7) * 0.12;
     } else if (mood === 'talking') {
-      group.current.rotation.y = Math.sin(t * 3) * 0.1;
-      group.current.position.y = baseY + Math.sin(t * 11) * 0.035;
+      group.current.rotation.y = Math.sin(t * 3) * 0.08;
+      group.current.position.y = Math.sin(t * 11) * 0.02;
     } else if (mood === 'celebrate') {
-      group.current.rotation.y += delta * 1.8;
-      group.current.position.y = baseY + Math.abs(Math.sin(t * 5)) * 0.1;
+      group.current.rotation.y += delta * 1.5;
+      group.current.position.y = Math.abs(Math.sin(t * 5)) * 0.05;
     } else {
-      group.current.rotation.y = Math.sin(t * 0.35) * 0.05;
-      group.current.position.y = baseY + Math.sin(t * 1.1) * 0.015;
+      group.current.rotation.y = Math.sin(t * 0.35) * 0.04;
+      group.current.position.y = Math.sin(t * 1.1) * 0.01;
     }
-    group.current.scale.setScalar(profile.scale);
   });
 
   return (
-    <group ref={group} dispose={null} position={[0, profile.yOffset, 0]}>
+    <group ref={group} dispose={null}>
       <primitive object={gltf.scene} />
     </group>
   );
@@ -112,7 +126,7 @@ function CartoonAvatarModel({ mood, url }: AvatarModelProps) {
   const gltf = useGLTF(url);
   const mixer = useRef<AnimationMixer | null>(null);
   const active = useRef<AnimationAction | null>(null);
-  const profile = CAMERA.cartoon;
+  useCenteredScene(gltf.scene, 1.45);
 
   const clips = useMemo(
     () => buildGobkitClips(gltf.animations[0]),
@@ -157,25 +171,22 @@ function CartoonAvatarModel({ mood, url }: AvatarModelProps) {
     mixer.current?.update(delta);
     if (!group.current) return;
     const t = state.clock.elapsedTime;
-    const baseY = profile.yOffset;
 
     if (mood === 'talking') {
-      group.current.position.y = baseY + Math.sin(t * 10) * 0.02;
-      group.current.rotation.z = Math.sin(t * 8) * 0.03;
+      group.current.position.y = Math.sin(t * 10) * 0.015;
+      group.current.rotation.z = Math.sin(t * 8) * 0.02;
     } else if (mood === 'thinking') {
-      group.current.rotation.y = Math.sin(t * 0.9) * 0.12;
+      group.current.rotation.y = Math.sin(t * 0.9) * 0.1;
     } else if (mood === 'celebrate') {
-      group.current.rotation.y = Math.sin(t * 4) * 0.15;
-      group.current.position.y = baseY + Math.abs(Math.sin(t * 6)) * 0.06;
+      group.current.rotation.y = Math.sin(t * 4) * 0.12;
+      group.current.position.y = Math.abs(Math.sin(t * 6)) * 0.04;
     } else {
-      group.current.rotation.y = Math.sin(t * 0.4) * 0.04;
-      group.current.position.y = baseY + Math.sin(t * 1.2) * 0.01;
+      group.current.rotation.y = Math.sin(t * 0.4) * 0.03;
     }
-    group.current.scale.setScalar(profile.scale);
   });
 
   return (
-    <group ref={group} dispose={null} position={[0, profile.yOffset, 0]}>
+    <group ref={group} dispose={null}>
       <primitive object={gltf.scene} />
     </group>
   );
@@ -188,10 +199,16 @@ function AvatarModel({ mood, url }: AvatarModelProps) {
 
 function AvatarFallback() {
   return (
-    <mesh position={[0, 0.55, 0]}>
-      <capsuleGeometry args={[0.28, 0.65, 8, 16]} />
-      <meshStandardMaterial color="#f472b6" metalness={0.1} roughness={0.45} />
-    </mesh>
+    <group position={[0, 0.35, 0]}>
+      <mesh position={[0, 0.25, 0]}>
+        <sphereGeometry args={[0.22, 32, 32]} />
+        <meshStandardMaterial color="#c4b5fd" />
+      </mesh>
+      <mesh position={[0, -0.15, 0]}>
+        <capsuleGeometry args={[0.18, 0.45, 8, 16]} />
+        <meshStandardMaterial color="#a78bfa" />
+      </mesh>
+    </group>
   );
 }
 
@@ -211,8 +228,7 @@ export function AvatarScene({
   statusLabel,
 }: AvatarSceneProps) {
   const cartoon = isCartoonAvatar(avatarUrl);
-  const profile = cartoon ? CAMERA.cartoon : CAMERA.robot;
-  const camZ = variant === 'compact' ? profile.position[2] - 0.6 : profile.position[2];
+  const camZ = variant === 'compact' ? PORTRAIT.position[2] - 0.35 : PORTRAIT.position[2];
 
   return (
     <div
@@ -230,17 +246,19 @@ export function AvatarScene({
     >
       <Canvas
         camera={{
-          position: [profile.position[0], profile.position[1], camZ],
-          fov: profile.fov,
+          position: [PORTRAIT.position[0], PORTRAIT.position[1], camZ],
+          fov: PORTRAIT.fov,
         }}
         dpr={[1, 1.5]}
-        onCreated={({ camera }) => camera.lookAt(profile.target[0], profile.target[1], profile.target[2])}
+        onCreated={({ camera }) =>
+          camera.lookAt(PORTRAIT.lookAt[0], PORTRAIT.lookAt[1], PORTRAIT.lookAt[2])
+        }
       >
-        <ambientLight intensity={1.1} />
-        <directionalLight position={[4, 6, 3]} intensity={1.35} />
-        <directionalLight position={[-3, 3, -2]} intensity={0.4} color="#f9a8d4" />
-        <pointLight position={[0, 2, 2]} intensity={0.5} color="#c4b5fd" />
-        <hemisphereLight args={['#fce7f3', '#312e81', 0.45]} />
+        <ambientLight intensity={1.15} />
+        <directionalLight position={[2, 4, 3]} intensity={1.5} />
+        <directionalLight position={[-2, 2, 1]} intensity={0.45} color="#f9a8d4" />
+        <pointLight position={[0, 1.2, 2]} intensity={0.55} color="#e9d5ff" />
+        <hemisphereLight args={['#fce7f3', '#312e81', 0.5]} />
         <Suspense fallback={<AvatarFallback />}>
           <AvatarModel mood={mood} url={avatarUrl} />
         </Suspense>

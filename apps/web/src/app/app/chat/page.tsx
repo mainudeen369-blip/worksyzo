@@ -494,8 +494,8 @@ export default function ChatPage() {
         }
 
         .gpt-avatar-canvas {
-          height: min(46vh, 440px);
-          min-height: 300px;
+          height: min(52vh, 480px);
+          min-height: 360px;
         }
 
         .gpt-avatar-caption {
@@ -886,8 +886,8 @@ export default function ChatPage() {
           }
 
           .gpt-avatar-canvas {
-            height: 240px;
-            min-height: 240px;
+            height: 280px;
+            min-height: 280px;
           }
 
           .gpt-fixed-footer {
