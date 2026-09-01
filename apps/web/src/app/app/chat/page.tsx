@@ -14,7 +14,7 @@ import {
   speakText,
 } from '@/lib/assistant-speech';
 
-const WORKSYZO_AVATAR_GLB = '/avatars/worksyzo-michelle.glb';
+const WORKSYZO_AVATAR_GLB = '/avatars/worksyzo-bot.glb';
 
 const AvatarScene = dynamic(
   () => import('@/components/avatar/avatar-scene').then((m) => m.AvatarScene),

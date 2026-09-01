@@ -9,7 +9,11 @@ const nextConfig = {
     return [
       {
         source: '/avatars/worksyzo-assistant.glb',
-        destination: '/avatars/worksyzo-michelle.glb',
+        destination: '/avatars/worksyzo-bot.glb',
+      },
+      {
+        source: '/avatars/worksyzo-michelle.glb',
+        destination: '/avatars/worksyzo-bot.glb',
       },
     ];
   },
