@@ -234,7 +234,7 @@ export default function ChatPage() {
           </div>
           <p className="gpt-avatar-caption">
             Hi {user.name?.split(' ')[0] ?? 'there'} — I&apos;m Worksyzo, your AI assistant for{' '}
-            <strong>{activeOrg.name}</strong>. Ask me anything or use voice.
+            <strong>{activeOrg.name}</strong>. Ask me anything — I&apos;ll reply with voice.
           </p>
         </aside>
 
