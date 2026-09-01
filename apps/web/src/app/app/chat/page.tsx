@@ -1,10 +1,23 @@
 'use client';
 
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import type { ChatResponseView, CitationView } from '@worksyzo/shared';
 import { api, ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { ChatMarkdown } from '@/components/chat-markdown';
+import type { AvatarMood } from '@/components/avatar/avatar-scene';
+import {
+  isSpeechRecognitionSupported,
+  isSpeechSynthesisSupported,
+  listenOnce,
+  speakText,
+} from '@/lib/assistant-speech';
+
+const AvatarScene = dynamic(
+  () => import('@/components/avatar/avatar-scene').then((m) => m.AvatarScene),
+  { ssr: false, loading: () => <div className="gpt-avatar-loading">Loading Worksyzo…</div> },
+);
 
 interface Turn {
   id: string;
@@ -29,10 +42,59 @@ export default function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [speaking, setSpeaking] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const latestPromptRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const stopSpeakRef = useRef<(() => void) | null>(null);
+  const celebrateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const avatarMood: AvatarMood = celebrate
+    ? 'celebrate'
+    : speaking
+      ? 'talking'
+      : busy
+        ? 'thinking'
+        : 'idle';
+
+  const avatarStatus = listening
+    ? 'Listening…'
+    : speaking
+      ? 'Speaking…'
+      : busy
+        ? 'Thinking…'
+        : 'Ready';
+
+  const say = useCallback(
+    (text: string) => {
+      stopSpeakRef.current?.();
+      if (!voiceEnabled || !isSpeechSynthesisSupported()) return;
+      stopSpeakRef.current = speakText(
+        text,
+        () => setSpeaking(true),
+        () => setSpeaking(false),
+      );
+    },
+    [voiceEnabled],
+  );
+
+  const triggerCelebrate = useCallback(() => {
+    setCelebrate(true);
+    if (celebrateTimerRef.current) clearTimeout(celebrateTimerRef.current);
+    celebrateTimerRef.current = setTimeout(() => setCelebrate(false), 2200);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopSpeakRef.current?.();
+      if (celebrateTimerRef.current) clearTimeout(celebrateTimerRef.current);
+      if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+    };
+  }, []);
 
   // Focus and scroll smoothly to the user's latest prompt so the response starts right below it
   useEffect(() => {
@@ -74,6 +136,8 @@ export default function ChatPage() {
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setTurns((prev) => [...prev, assistantTurn]);
+      triggerCelebrate();
+      say(result.answer);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Chat failed. Please try again.');
     } finally {
@@ -94,6 +158,20 @@ export default function ChatPage() {
     }
   }
 
+  async function handleMic() {
+    if (listening || busy) return;
+    setListening(true);
+    try {
+      const heard = await listenOnce({ onInterim: (t) => setMessage(t) });
+      setMessage(heard);
+      await handleSend(heard);
+    } catch {
+      // user cancelled or no speech
+    } finally {
+      setListening(false);
+    }
+  }
+
   function handleCopy(id: string, text: string) {
     void navigator.clipboard.writeText(text);
     setCopiedId(id);
@@ -106,15 +184,6 @@ export default function ChatPage() {
     setError(null);
     setMessage('');
   }
-
-  const userInitials = user.name
-    ? user.name
-        .split(' ')
-        .map((p) => p[0])
-        .slice(0, 2)
-        .join('')
-        .toUpperCase()
-    : 'U';
 
   return (
     <div className="gpt-chat-page">
@@ -129,13 +198,23 @@ export default function ChatPage() {
           </span>
         </div>
 
-        {turns.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <button
             type="button"
             className="btn btn-ghost"
             style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', borderRadius: '8px' }}
-            onClick={handleResetChat}
+            onClick={() => setVoiceEnabled((v) => !v)}
+            title={voiceEnabled ? 'Mute voice' : 'Enable voice'}
           >
+            {voiceEnabled ? '🔊 Voice on' : '🔇 Voice off'}
+          </button>
+          {turns.length > 0 ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', borderRadius: '8px' }}
+              onClick={handleResetChat}
+            >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
               <path d="M21 3v5h-5" />
@@ -144,26 +223,30 @@ export default function ChatPage() {
             </svg>
             New chat
           </button>
-        )}
+          ) : null}
+        </div>
       </header>
 
+      <div className="gpt-chat-split">
+        <aside className="gpt-avatar-stage" aria-label="Worksyzo 3D assistant">
+          <div className="gpt-avatar-canvas">
+            <AvatarScene mood={avatarMood} variant="stage" statusLabel={avatarStatus} />
+          </div>
+          <p className="gpt-avatar-caption">
+            Hi {user.name?.split(' ')[0] ?? 'there'} — ask me anything about <strong>{activeOrg.name}</strong> documents.
+          </p>
+        </aside>
+
+        <div className="gpt-chat-main">
       {/* Main Conversation Stream - Full Page Flow */}
       <main className="gpt-conversation-stream">
         {turns.length === 0 ? (
           <div className="gpt-welcome-container">
-            <div className="gpt-brand-badge">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                <path d="M9.5 9h.01" />
-                <path d="M14.5 9h.01" />
-              </svg>
-            </div>
-
             <h1 style={{ fontSize: '1.6rem', fontWeight: 800, margin: '0 0 0.5rem', letterSpacing: '-0.025em' }}>
               What would you like to know?
             </h1>
             <p className="muted" style={{ margin: '0 0 2rem', fontSize: '0.94rem', lineHeight: 1.5, maxWidth: '540px' }}>
-              Search across all verified <strong>{activeOrg.name}</strong> documents with clear executive bullet points and exact citations.
+              Your 3D Worksyzo assistant searches verified <strong>{activeOrg.name}</strong> documents with citations.
             </p>
 
             {/* Quick Prompts */}
@@ -202,9 +285,8 @@ export default function ChatPage() {
                     <div className="gpt-assistant-message-body">
                       {/* Assistant Header */}
                       <div className="gpt-assistant-meta">
-                        <div className="gpt-assistant-avatar">W</div>
                         <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text)' }}>
-                          Worksyzo AI
+                          Worksyzo
                         </span>
                         <span style={{ color: 'var(--muted)', fontSize: '0.76rem' }}>
                           {turn.timestamp}
@@ -279,7 +361,6 @@ export default function ChatPage() {
         {/* Thinking Indicator */}
         {busy && (
           <div className="gpt-thinking-row">
-            <div className="gpt-assistant-avatar">W</div>
             <div className="gpt-thinking-bubble">
               <span className="thinking-dot" />
               <span className="thinking-dot" />
@@ -330,6 +411,18 @@ export default function ChatPage() {
 
             {/* Right Action Buttons */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+              {isSpeechRecognitionSupported() ? (
+                <button
+                  type="button"
+                  className={`gpt-icon-btn ${listening ? 'gpt-mic-active' : ''}`}
+                  title="Voice input"
+                  disabled={busy}
+                  onClick={() => void handleMic()}
+                >
+                  🎤
+                </button>
+              ) : null}
+
               <span className="gpt-pill-tag">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10" />
@@ -359,6 +452,8 @@ export default function ChatPage() {
           </div>
         </div>
       </div>
+        </div>
+      </div>
 
       <style jsx>{`
         .gpt-chat-page {
@@ -380,6 +475,53 @@ export default function ChatPage() {
           background: var(--topbar-bg);
           backdrop-filter: blur(12px);
           border-bottom: 1px solid var(--border);
+        }
+
+        .gpt-chat-split {
+          flex: 1;
+          display: flex;
+          min-height: 0;
+        }
+
+        .gpt-avatar-stage {
+          width: 340px;
+          flex-shrink: 0;
+          display: flex;
+          flex-direction: column;
+          border-right: 1px solid var(--border);
+          background: var(--bg-soft);
+        }
+
+        .gpt-avatar-canvas {
+          height: min(46vh, 440px);
+          min-height: 300px;
+        }
+
+        .gpt-avatar-caption {
+          margin: 0;
+          padding: 0.85rem 1rem 1rem;
+          font-size: 0.8rem;
+          line-height: 1.45;
+          color: var(--muted);
+          border-top: 1px solid var(--border);
+        }
+
+        .gpt-avatar-loading {
+          min-height: 320px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #0f172a;
+          color: #94a3b8;
+          font-size: 0.85rem;
+        }
+
+        .gpt-chat-main {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          min-width: 0;
+          position: relative;
         }
 
         .gpt-conversation-stream {
@@ -610,14 +752,15 @@ export default function ChatPage() {
 
         /* Fixed Footer at the bottom */
         .gpt-fixed-footer {
-          position: fixed;
+          position: sticky;
           bottom: 0;
-          left: 260px;
+          left: 0;
           right: 0;
           z-index: 30;
           background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, var(--bg) 25%, var(--bg) 100%);
           padding: 1.5rem 1rem 1rem 1rem;
           pointer-events: none;
+          margin-top: auto;
         }
 
         html[data-theme='dark'] .gpt-fixed-footer {
@@ -719,6 +862,10 @@ export default function ChatPage() {
           background: #1d4ed8;
         }
 
+        .gpt-mic-active {
+          background: rgba(239, 68, 68, 0.15) !important;
+        }
+
         .gpt-disclaimer-text {
           font-size: 0.72rem;
           color: var(--muted);
@@ -727,13 +874,27 @@ export default function ChatPage() {
         }
 
         @media (max-width: 768px) {
+          .gpt-chat-split {
+            flex-direction: column;
+          }
+
+          .gpt-avatar-stage {
+            width: 100%;
+            border-right: none;
+            border-bottom: 1px solid var(--border);
+          }
+
+          .gpt-avatar-canvas {
+            height: 240px;
+            min-height: 240px;
+          }
+
           .gpt-fixed-footer {
-            left: 0;
             padding: 1rem 0.75rem 0.75rem 0.75rem;
           }
 
           .gpt-conversation-stream {
-            padding: 1rem 0.75rem 8rem 0.75rem;
+            padding: 1rem 0.75rem 1rem 0.75rem;
           }
         }
       `}</style>

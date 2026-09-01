@@ -170,8 +170,8 @@ export class AiService {
       [toVectorLiteral(queryVector), titleKeywordRegex, focusDocumentId, wantsRecent],
     );
 
-    // If results skew to one document, drop unrelated chunks
     let rows = hits.rows;
+
     if (!focusDocumentId && rows.length > 0) {
       const counts = new Map<string, number>();
       for (const row of rows) {
@@ -182,6 +182,24 @@ export class AiService {
         rows = rows.filter((r) => r.document_id === dominant[0]);
       }
     }
+
+    // Deduplicate chunk rows
+    const seenChunks = new Set<string>();
+    rows = rows.filter((row) => {
+      const key = `${row.document_id}:${row.chunk_index}`;
+      if (seenChunks.has(key)) return false;
+      seenChunks.add(key);
+      return true;
+    });
+
+    // Prefer fewer citation cards: max 2 chunks per document in the response list
+    const perDoc = new Map<string, number>();
+    rows = rows.filter((row) => {
+      const count = perDoc.get(row.document_id) ?? 0;
+      if (count >= 2) return false;
+      perDoc.set(row.document_id, count + 1);
+      return true;
+    });
 
       const citations: CitationView[] = rows.map((row) => ({
         documentId: row.document_id,

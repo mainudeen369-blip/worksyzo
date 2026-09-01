@@ -2,85 +2,73 @@
 
 import { Suspense, useEffect, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, useGLTF, useAnimations } from '@react-three/drei';
+import { useGLTF, useAnimations } from '@react-three/drei';
 import { LoopRepeat, type AnimationAction, type Group } from 'three';
 
-/** Bundled cartoon robot — no external sites (Ready Player Me blocked on some networks). */
 export const DEFAULT_AVATAR_GLB =
   process.env.NEXT_PUBLIC_AVATAR_GLB_URL ?? '/avatars/worksyzo-bot.glb';
 
 export type AvatarMood = 'idle' | 'thinking' | 'talking' | 'success' | 'celebrate';
 
+const CAMERA = {
+  stage: { position: [0, 1.05, 5.6] as [number, number, number], fov: 30, target: [0, 0.9, 0] as [number, number, number] },
+  compact: { position: [0, 1.2, 4.2] as [number, number, number], fov: 34, target: [0, 0.85, 0] as [number, number, number] },
+};
+
 interface AvatarModelProps {
   mood: AvatarMood;
   url: string;
+  scale: number;
+  yOffset: number;
 }
 
 function playAction(action: AnimationAction | null | undefined, loop = true) {
   if (!action) return undefined;
-  action.reset().fadeIn(0.25);
-  if (loop) {
-    action.setLoop(LoopRepeat, Infinity);
-  } else {
-    action.setLoop(LoopRepeat, 1);
-    action.clampWhenFinished = true;
-  }
+  action.reset().fadeIn(0.3);
+  action.setLoop(loop ? LoopRepeat : LoopRepeat, loop ? Infinity : 1);
+  if (!loop) action.clampWhenFinished = true;
   action.play();
-  return () => {
-    action.fadeOut(0.25);
-  };
+  return () => action.fadeOut(0.3);
 }
 
-function AvatarModel({ mood, url }: AvatarModelProps) {
+function AvatarModel({ mood, url, scale, yOffset }: AvatarModelProps) {
   const group = useRef<Group>(null);
   const gltf = useGLTF(url);
   const { actions } = useAnimations(gltf.animations, group);
-  const talkPhase = useRef(0);
 
   useEffect(() => {
     const a = actions;
     let cleanup: (() => void) | undefined;
-
-    if (mood === 'celebrate') {
-      cleanup = playAction(a.Jump ?? a.ThumbsUp ?? a.Wave, false);
-    } else if (mood === 'talking') {
-      cleanup = playAction(a.Wave ?? a.Yes ?? a.Idle);
-    } else if (mood === 'thinking') {
-      cleanup = playAction(a.Walking ?? a.Idle);
-    } else if (mood === 'success') {
-      cleanup = playAction(a.ThumbsUp ?? a.Yes ?? a.Wave, false);
-    } else {
-      cleanup = playAction(a.Idle);
-    }
-
+    if (mood === 'celebrate') cleanup = playAction(a.Jump ?? a.ThumbsUp ?? a.Wave, false);
+    else if (mood === 'talking') cleanup = playAction(a.Wave ?? a.Yes ?? a.Idle);
+    else if (mood === 'thinking') cleanup = playAction(a.Walking ?? a.Idle);
+    else if (mood === 'success') cleanup = playAction(a.ThumbsUp ?? a.Yes, false);
+    else cleanup = playAction(a.Idle);
     return () => cleanup?.();
   }, [actions, mood]);
 
   useFrame((state, delta) => {
     if (!group.current) return;
     const t = state.clock.elapsedTime;
+    const baseY = yOffset;
 
     if (mood === 'thinking') {
-      group.current.rotation.y = Math.sin(t * 0.8) * 0.25;
+      group.current.rotation.y = Math.sin(t * 0.7) * 0.18;
     } else if (mood === 'talking') {
-      talkPhase.current += delta * 8;
-      group.current.rotation.y = Math.sin(talkPhase.current) * 0.08;
-      group.current.position.y = -1.05 + Math.sin(t * 12) * 0.04;
-      group.current.scale.setScalar(0.95 + Math.sin(t * 10) * 0.02);
+      group.current.rotation.y = Math.sin(t * 3) * 0.1;
+      group.current.position.y = baseY + Math.sin(t * 11) * 0.035;
     } else if (mood === 'celebrate') {
-      group.current.rotation.y += delta * 2.2;
-      group.current.position.y = -1.05 + Math.abs(Math.sin(t * 6)) * 0.12;
-    } else if (mood === 'success') {
-      group.current.position.y = -1.05 + Math.sin(t * 4) * 0.05;
+      group.current.rotation.y += delta * 1.8;
+      group.current.position.y = baseY + Math.abs(Math.sin(t * 5)) * 0.1;
     } else {
-      group.current.rotation.y = Math.sin(t * 0.4) * 0.06;
-      group.current.position.y = -1.05 + Math.sin(t * 1.2) * 0.02;
-      group.current.scale.setScalar(0.95);
+      group.current.rotation.y = Math.sin(t * 0.35) * 0.05;
+      group.current.position.y = baseY + Math.sin(t * 1.1) * 0.015;
     }
+    group.current.scale.setScalar(scale);
   });
 
   return (
-    <group ref={group} dispose={null} position={[0, -1.05, 0]} scale={0.95}>
+    <group ref={group} dispose={null} position={[0, yOffset, 0]}>
       <primitive object={gltf.scene} />
     </group>
   );
@@ -88,9 +76,9 @@ function AvatarModel({ mood, url }: AvatarModelProps) {
 
 function AvatarFallback() {
   return (
-    <mesh position={[0, 0.2, 0]}>
-      <sphereGeometry args={[0.55, 32, 32]} />
-      <meshStandardMaterial color="#38bdf8" metalness={0.2} roughness={0.35} />
+    <mesh position={[0, 0.9, 0]}>
+      <capsuleGeometry args={[0.35, 0.9, 8, 16]} />
+      <meshStandardMaterial color="#38bdf8" metalness={0.15} roughness={0.4} />
     </mesh>
   );
 }
@@ -99,35 +87,61 @@ interface AvatarSceneProps {
   mood: AvatarMood;
   avatarUrl?: string;
   className?: string;
+  variant?: 'stage' | 'compact';
+  statusLabel?: string;
 }
 
-export function AvatarScene({ mood, avatarUrl = DEFAULT_AVATAR_GLB, className }: AvatarSceneProps) {
+export function AvatarScene({
+  mood,
+  avatarUrl = DEFAULT_AVATAR_GLB,
+  className,
+  variant = 'stage',
+  statusLabel,
+}: AvatarSceneProps) {
+  const cam = CAMERA[variant];
+  const scale = variant === 'stage' ? 0.48 : 0.55;
+  const yOffset = variant === 'stage' ? -0.75 : -0.85;
+
   return (
     <div
       className={className}
       style={{
         width: '100%',
         height: '100%',
-        background: 'linear-gradient(180deg, #0f172a 0%, #1e3b82 55%, #1e293b 100%)',
+        position: 'relative',
+        background: 'linear-gradient(165deg, #0c1222 0%, #1e3a8a 45%, #0f172a 100%)',
+        borderRadius: variant === 'stage' ? '0' : '12px',
+        overflow: 'hidden',
       }}
     >
-      <Canvas camera={{ position: [0, 1.35, 2.4], fov: 42 }} dpr={[1, 1.5]}>
-        <ambientLight intensity={0.9} />
-        <directionalLight position={[3, 5, 2]} intensity={1.3} />
-        <directionalLight position={[-2, 2, -2]} intensity={0.4} color="#93c5fd" />
-        <pointLight position={[0, 2, 1]} intensity={0.5} color="#38bdf8" />
-        <hemisphereLight args={['#dbeafe', '#1e293b', 0.55]} />
+      <Canvas camera={{ position: cam.position, fov: cam.fov }} dpr={[1, 1.5]}>
+        <ambientLight intensity={1} />
+        <directionalLight position={[4, 6, 3]} intensity={1.4} />
+        <directionalLight position={[-3, 3, -2]} intensity={0.35} color="#bfdbfe" />
+        <pointLight position={[0, 2.5, 2]} intensity={0.45} color="#60a5fa" />
+        <hemisphereLight args={['#e0f2fe', '#1e293b', 0.5]} />
         <Suspense fallback={<AvatarFallback />}>
-          <AvatarModel mood={mood} url={avatarUrl} />
+          <AvatarModel mood={mood} url={avatarUrl} scale={scale} yOffset={yOffset} />
         </Suspense>
-        <OrbitControls
-          enablePan={false}
-          enableZoom={false}
-          minPolarAngle={Math.PI / 2.4}
-          maxPolarAngle={Math.PI / 2}
-          target={[0, 0.75, 0]}
-        />
       </Canvas>
+      {statusLabel ? (
+        <div
+          style={{
+            position: 'absolute',
+            left: '0.75rem',
+            bottom: '0.75rem',
+            padding: '0.25rem 0.65rem',
+            borderRadius: 999,
+            fontSize: '0.72rem',
+            fontWeight: 700,
+            background: 'rgba(15, 23, 42, 0.8)',
+            color: '#e2e8f0',
+            border: '1px solid rgba(148, 163, 184, 0.25)',
+          }}
+        >
+          {statusLabel}
+        </div>
+      ) : null}
     </div>
   );
 }
