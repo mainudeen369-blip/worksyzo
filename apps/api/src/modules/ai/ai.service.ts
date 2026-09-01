@@ -71,11 +71,42 @@ export class AiService {
       'the', 'and', 'for', 'about', 'this', 'give', 'what', 'brief', 'show',
       'tell', 'please', 'can', 'you', 'with', 'from', 'that', 'have', 'has',
       'is', 'are', 'was', 'were', 'our', 'all', 'any', 'how', 'who', 'when',
-      'where', 'why', 'which', 'summarize', 'summary'
+      'where', 'why', 'which', 'summarize', 'summary', 'explain', 'describe',
+      'me', 'my', 'one', 'doc', 'document', 'file', 'pdf',
     ]);
 
-    const keywords = rawTokens.filter((w) => !stopwords.has(w) && w.length >= 2);
-    const keywordRegex = keywords.length > 0 ? `(${keywords.map((k) => k.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|')})` : null;
+    const keywords = rawTokens.filter((w) => !stopwords.has(w) && w.length >= 3);
+    const wantsRecent = /\b(latest|recent|newest|last uploaded|most recent)\b/i.test(
+      input.message,
+    );
+
+    // Prefer a single document when the question matches a title (e.g. "Deep Technical Architecture")
+    const titleScores = await client.query<{ id: string; title: string; score: number }>(
+      `SELECT d.id, d.title,
+              (SELECT COUNT(*)::int FROM unnest($1::text[]) kw
+               WHERE d.title ILIKE '%' || kw || '%') AS score
+       FROM documents d
+       WHERE d.deleted_at IS NULL
+         AND d.status = 'ready'
+         AND d.visibility = 'org'
+       ORDER BY score DESC, d.created_at DESC
+       LIMIT 5`,
+      [keywords.length > 0 ? keywords : ['__none__']],
+    );
+
+    let focusDocumentId: string | null = null;
+    const bestTitle = titleScores.rows[0];
+    if (bestTitle && bestTitle.score >= 2) {
+      focusDocumentId = bestTitle.id;
+    } else if (bestTitle?.score === 1) {
+      const matched = titleScores.rows.filter((r) => r.score >= 1);
+      if (matched.length === 1) focusDocumentId = matched[0]!.id;
+    }
+
+    const titleKeywordRegex =
+      keywords.length > 0
+        ? `(${keywords.map((k) => k.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|')})`
+        : null;
 
     const hits = await client.query<{
       document_id: string;
@@ -94,20 +125,23 @@ export class AiService {
            AND d.status = 'ready'
            AND d.visibility = 'org'
            AND dc.embedding IS NOT NULL
+           AND ($3::uuid IS NULL OR d.id = $3::uuid)
          ORDER BY dc.embedding <=> $1::vector
          LIMIT 8
        ),
-       keyword_hits AS (
+       title_hits AS (
          SELECT dc.document_id, d.title, dc.chunk_index, dc.content,
-                0.05 AS distance,
+                0.04 AS distance,
                 1 AS priority
          FROM document_chunks dc
          JOIN documents d ON d.id = dc.document_id AND d.org_id = dc.org_id
          WHERE d.deleted_at IS NULL
            AND d.status = 'ready'
            AND d.visibility = 'org'
-           AND ($2::text IS NOT NULL AND (d.title ~* $2 OR dc.content ~* $2))
-         LIMIT 6
+           AND ($3::uuid IS NULL OR d.id = $3::uuid)
+           AND ($2::text IS NOT NULL AND d.title ~* $2)
+         ORDER BY dc.chunk_index ASC
+         LIMIT 8
        ),
        recent_hits AS (
          SELECT dc.document_id, d.title, dc.chunk_index, dc.content,
@@ -118,13 +152,14 @@ export class AiService {
          WHERE d.deleted_at IS NULL
            AND d.status = 'ready'
            AND d.visibility = 'org'
+           AND $4::boolean = true
          ORDER BY d.created_at DESC, dc.chunk_index ASC
          LIMIT 4
        )
        SELECT DISTINCT ON (document_id, chunk_index)
               document_id, title, chunk_index, content, distance, priority
        FROM (
-         SELECT * FROM keyword_hits
+         SELECT * FROM title_hits
          UNION ALL
          SELECT * FROM vector_hits
          UNION ALL
@@ -132,10 +167,23 @@ export class AiService {
        ) combined
        ORDER BY document_id, chunk_index, priority ASC, distance ASC
        LIMIT 8`,
-      [toVectorLiteral(queryVector), keywordRegex],
+      [toVectorLiteral(queryVector), titleKeywordRegex, focusDocumentId, wantsRecent],
     );
 
-      const citations: CitationView[] = hits.rows.map((row) => ({
+    // If results skew to one document, drop unrelated chunks
+    let rows = hits.rows;
+    if (!focusDocumentId && rows.length > 0) {
+      const counts = new Map<string, number>();
+      for (const row of rows) {
+        counts.set(row.document_id, (counts.get(row.document_id) ?? 0) + 1);
+      }
+      const dominant = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+      if (dominant && dominant[1] >= Math.ceil(rows.length * 0.6)) {
+        rows = rows.filter((r) => r.document_id === dominant[0]);
+      }
+    }
+
+      const citations: CitationView[] = rows.map((row) => ({
         documentId: row.document_id,
         title: row.title,
         chunkIndex: row.chunk_index,
@@ -166,6 +214,8 @@ export class AiService {
               '• Use structured markdown: use clear section headers (### or ####) and clean bullet points (•) with bold keywords for every key point, policy rule, step, or metric.',
               '• Avoid walls of dense text. Break down explanations into readable bulleted items.',
               '• Cite sources inline like [#1], [#2] directly after the relevant statements or facts.',
+              '• Answer from the most relevant document only — never mix unrelated documents in one response.',
+              '• Synthesize a clean executive summary; do not dump raw document excerpts or unrelated snippets.',
               '• If the organization context is empty or does not contain the answer, politely state what is missing and advise uploading the relevant document.',
               '• Strict Accuracy: Answer strictly from the provided organization context. Never invent policies or extrapolate unsupported data.',
             ].join('\n'),

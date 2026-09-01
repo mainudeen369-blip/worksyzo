@@ -23,10 +23,27 @@ Then restart `npm run dev`.
 
 ### Try it
 
-1. http://localhost:3001/login → `owner@acme.test` / `worksyzo-demo-2026`
+1. **Login (Worksyzo only):** http://localhost:3001/login → `owner@acme.test` / `worksyzo-demo-2026`
 2. **Documents** → upload `samples/acme-leave-policy.txt`
 3. Wait until status is `ready`
 4. **Chat** → “What is the leave policy?”
+
+### Page stuck loading / port 3001 not working?
+
+If `npm run dev` shows `EADDRINUSE :::3001`, an old Next.js process is still running. Fix:
+
+```powershell
+cd C:\HajaWorkingFolder\oldFiles\Worksyzo
+npm run dev:web:clean
+```
+
+In a **second terminal**, start API + worker if needed:
+
+```powershell
+npm run dev:api
+```
+
+**Note:** API runs on **4000**, web on **3001**. Login is always `http://localhost:3001/login` — not Sketchfab or Ready Player Me (those were only optional 3D avatar sites).
 
 ## Current status: Step A complete (scaffold)
 

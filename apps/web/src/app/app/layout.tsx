@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
+import { AvatarAssistant } from '@/components/avatar-assistant';
 import { useSession } from '@/lib/session';
 
 interface NavItem {
@@ -433,6 +434,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           {children}
         </div>
       </main>
+
+      <AvatarAssistant />
 
       <style jsx global>{`
         .app-shell {

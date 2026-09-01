@@ -23,6 +23,7 @@
     "dev": "npm run build:packages && concurrently -n pkgs,api,web,worker -c gray,green,blue,yellow \"npm run watch:packages\" \"npm run dev -w @worksyzo/api\" \"npm run dev -w @worksyzo/web\" \"npm run dev -w @worksyzo/worker\"",
     "dev:api": "npm run build:packages && npm run dev -w @worksyzo/api",
     "dev:web": "npm run dev -w @worksyzo/web",
+    "dev:web:clean": "node scripts/free-port.mjs 3001 && node -e \"require('fs').rmSync('apps/web/.next',{recursive:true,force:true})\" && npm run dev -w @worksyzo/web",
     "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
     "test:isolation": "npm run test:isolation -w @worksyzo/db",
     "setup:neon": "npm run build:packages && npm run db:migrate && npm run db:seed",
