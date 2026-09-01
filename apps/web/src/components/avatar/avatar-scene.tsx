@@ -1,8 +1,8 @@
 'use client';
 
-import { Suspense, useEffect, useLayoutEffect, useRef } from 'react';
+import { Component, Suspense, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { ContactShadows, Environment, useAnimations, useGLTF } from '@react-three/drei';
+import { useAnimations, useGLTF } from '@react-three/drei';
 import {
   Box3,
   LoopRepeat,
@@ -12,65 +12,51 @@ import {
   type Object3D,
 } from 'three';
 
-/** Cartoon robot assistant — fully clothed mascot with expressive face (RobotExpressive). */
+/** Cartoon robot assistant — fully clothed mascot (RobotExpressive, bundled locally). */
 export const DEFAULT_AVATAR_GLB = '/avatars/worksyzo-bot.glb';
-
-export const LEGACY_CARTOON_GLB = '/avatars/worksyzo-assistant.glb';
-export const LEGACY_HUMAN_GLB = '/avatars/worksyzo-michelle.glb';
-export const LEGACY_XBOT_GLB = '/avatars/worksyzo-human.glb';
 
 export type AvatarMood = 'idle' | 'thinking' | 'talking' | 'success' | 'celebrate';
 
-/** Front bust portrait — cartoon face centered, shoulders visible. */
 const PORTRAIT = {
-  position: [0, 0.5, 1.22] as [number, number, number],
-  fov: 30,
-  lookAt: [0, 0.48, 0] as [number, number, number],
+  position: [0, 0.42, 2.05] as [number, number, number],
+  fov: 34,
+  lookAt: [0, 0.4, 0] as [number, number, number],
 };
 
-const BLOCKED_MODEL_HINTS = ['michelle', 'assistant', 'minion', 'human', 'xbot'];
-
-/** Always use the cartoon robot — never load human/minion models. */
 export function resolveAvatarUrl(url?: string): string {
-  const raw = (url ?? process.env.NEXT_PUBLIC_AVATAR_GLB_URL ?? DEFAULT_AVATAR_GLB).split('?')[0] ?? '';
-  if (!raw || BLOCKED_MODEL_HINTS.some((hint) => raw.includes(hint))) return DEFAULT_AVATAR_GLB;
-  return raw.includes('bot') ? raw : DEFAULT_AVATAR_GLB;
+  const raw = (url ?? DEFAULT_AVATAR_GLB).split('?')[0] ?? DEFAULT_AVATAR_GLB;
+  if (raw.includes('bot')) return DEFAULT_AVATAR_GLB;
+  return DEFAULT_AVATAR_GLB;
 }
 
 type ActionMap = Record<string, AnimationAction | null>;
 
-function firstAction(actions: ActionMap, ...keys: string[]) {
+function findAction(actions: ActionMap, ...keys: string[]) {
+  const entries = Object.entries(actions);
   for (const key of keys) {
-    const action = actions[key];
-    if (action) return action;
+    const hit = entries.find(([name]) => name.toLowerCase() === key.toLowerCase());
+    if (hit?.[1]) return hit[1];
   }
   return Object.values(actions).find(Boolean);
 }
 
-/** Calm poses only — no dance, walk, or run loops. */
 function robotMoodAction(actions: ActionMap, mood: AvatarMood) {
-  switch (mood) {
-    case 'celebrate':
-    case 'success':
-      return firstAction(actions, 'ThumbsUp', 'Yes', 'Wave', 'Idle', 'Standing');
-    default:
-      return firstAction(actions, 'Idle', 'Standing');
+  if (mood === 'celebrate' || mood === 'success') {
+    return findAction(actions, 'ThumbsUp', 'Yes', 'Wave', 'Idle', 'Standing');
   }
+  return findAction(actions, 'Idle', 'Standing');
 }
 
-function useCenteredScene(scene: Object3D, targetHeight = 1.72) {
+function useCenteredScene(scene: Object3D, targetHeight = 1.65) {
   useLayoutEffect(() => {
     scene.updateMatrixWorld(true);
     const box = new Box3().setFromObject(scene);
     if (box.isEmpty()) return;
 
-    const size = box.getSize(new Vector3());
     const center = box.getCenter(new Vector3());
+    scene.position.sub(center);
 
-    scene.position.x -= center.x;
-    scene.position.y -= center.y;
-    scene.position.z -= center.z;
-
+    const size = box.getSize(new Vector3());
     const height = Math.max(size.y, 0.001);
     scene.scale.setScalar(targetHeight / height);
     scene.rotation.set(0, 0, 0);
@@ -79,12 +65,12 @@ function useCenteredScene(scene: Object3D, targetHeight = 1.72) {
 
 function playAction(action: AnimationAction | null | undefined, loop = true) {
   if (!action) return undefined;
-  action.reset().fadeIn(0.35);
+  action.reset().fadeIn(0.25);
   action.setLoop(LoopRepeat, loop ? Infinity : 1);
   if (!loop) action.clampWhenFinished = true;
   action.play();
   return () => {
-    action.fadeOut(0.35);
+    action.fadeOut(0.25);
   };
 }
 
@@ -97,7 +83,7 @@ function CartoonRobotModel({ mood, url }: CartoonRobotModelProps) {
   const group = useRef<Group>(null);
   const gltf = useGLTF(url);
   const { actions } = useAnimations(gltf.animations, group);
-  useCenteredScene(gltf.scene, 1.72);
+  useCenteredScene(gltf.scene, 1.65);
 
   useEffect(() => {
     const action = robotMoodAction(actions, mood);
@@ -109,12 +95,11 @@ function CartoonRobotModel({ mood, url }: CartoonRobotModelProps) {
   useFrame((state) => {
     if (!group.current) return;
     if (mood === 'talking') {
-      const t = state.clock.elapsedTime;
-      group.current.position.y = Math.sin(t * 5) * 0.003;
+      group.current.position.y = Math.sin(state.clock.elapsedTime * 5) * 0.004;
       return;
     }
-    group.current.rotation.set(0, 0, 0);
     group.current.position.y = 0;
+    group.current.rotation.y = 0;
   });
 
   return (
@@ -124,27 +109,53 @@ function CartoonRobotModel({ mood, url }: CartoonRobotModelProps) {
   );
 }
 
-function AvatarFallback() {
+/** Built-in cartoon robot — always renders even if GLB fails. */
+function ProceduralRobot() {
   return (
-    <group position={[0, 0.2, 0]}>
-      <mesh position={[0, 0.38, 0]}>
-        <boxGeometry args={[0.34, 0.3, 0.28]} />
-        <meshStandardMaterial color="#6366f1" metalness={0.35} roughness={0.4} />
+    <group position={[0, -0.05, 0]}>
+      <mesh position={[0, 0.42, 0]} castShadow>
+        <boxGeometry args={[0.36, 0.32, 0.3]} />
+        <meshStandardMaterial color="#6366f1" metalness={0.3} roughness={0.45} />
       </mesh>
-      <mesh position={[-0.08, 0.4, 0.15]}>
-        <sphereGeometry args={[0.04, 16, 16]} />
-        <meshStandardMaterial color="#22d3ee" emissive="#0891b2" emissiveIntensity={0.35} />
+      <mesh position={[-0.09, 0.44, 0.14]}>
+        <sphereGeometry args={[0.045, 16, 16]} />
+        <meshStandardMaterial color="#22d3ee" emissive="#06b6d4" emissiveIntensity={0.5} />
       </mesh>
-      <mesh position={[0.08, 0.4, 0.15]}>
-        <sphereGeometry args={[0.04, 16, 16]} />
-        <meshStandardMaterial color="#22d3ee" emissive="#0891b2" emissiveIntensity={0.35} />
+      <mesh position={[0.09, 0.44, 0.14]}>
+        <sphereGeometry args={[0.045, 16, 16]} />
+        <meshStandardMaterial color="#22d3ee" emissive="#06b6d4" emissiveIntensity={0.5} />
       </mesh>
-      <mesh position={[0, 0.05, 0]}>
-        <capsuleGeometry args={[0.2, 0.35, 8, 16]} />
-        <meshStandardMaterial color="#4f46e5" metalness={0.25} roughness={0.45} />
+      <mesh position={[0, 0.28, 0.16]}>
+        <boxGeometry args={[0.14, 0.04, 0.02]} />
+        <meshStandardMaterial color="#1e293b" />
+      </mesh>
+      <mesh position={[0, 0.08, 0]} castShadow>
+        <capsuleGeometry args={[0.2, 0.38, 8, 16]} />
+        <meshStandardMaterial color="#4f46e5" metalness={0.2} roughness={0.5} />
+      </mesh>
+      <mesh position={[-0.28, 0.1, 0]}>
+        <capsuleGeometry args={[0.06, 0.22, 6, 12]} />
+        <meshStandardMaterial color="#818cf8" />
+      </mesh>
+      <mesh position={[0.28, 0.1, 0]}>
+        <capsuleGeometry args={[0.06, 0.22, 6, 12]} />
+        <meshStandardMaterial color="#818cf8" />
       </mesh>
     </group>
   );
+}
+
+class AvatarModelErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) return <ProceduralRobot />;
+    return this.props.children;
+  }
 }
 
 interface AvatarSceneProps {
@@ -163,7 +174,7 @@ export function AvatarScene({
   statusLabel,
 }: AvatarSceneProps) {
   const modelUrl = resolveAvatarUrl(avatarUrl);
-  const camZ = variant === 'compact' ? PORTRAIT.position[2] - 0.2 : PORTRAIT.position[2];
+  const camZ = variant === 'compact' ? PORTRAIT.position[2] - 0.3 : PORTRAIT.position[2];
 
   return (
     <div
@@ -171,45 +182,34 @@ export function AvatarScene({
       style={{
         width: '100%',
         height: '100%',
+        minHeight: 320,
         position: 'relative',
-        background: 'radial-gradient(ellipse at 50% 30%, #312e81 0%, #1e1b4b 38%, #0f172a 100%)',
+        background: 'radial-gradient(ellipse at 50% 28%, #4338ca 0%, #1e1b4b 45%, #0f172a 100%)',
         overflow: 'hidden',
       }}
     >
       <Canvas
+        style={{ width: '100%', height: '100%', display: 'block' }}
         camera={{
           position: [PORTRAIT.position[0], PORTRAIT.position[1], camZ],
           fov: PORTRAIT.fov,
+          near: 0.1,
+          far: 100,
         }}
-        dpr={[1, 2]}
-        gl={{ antialias: true, alpha: false }}
+        dpr={[1, 1.5]}
+        gl={{ antialias: true, powerPreference: 'high-performance' }}
         onCreated={({ camera }) =>
           camera.lookAt(PORTRAIT.lookAt[0], PORTRAIT.lookAt[1], PORTRAIT.lookAt[2])
         }
       >
-        <color attach="background" args={['#0f172a']} />
-        <ambientLight intensity={0.55} />
-        <directionalLight position={[2, 4, 3]} intensity={1.4} castShadow />
-        <directionalLight position={[-2.5, 2, 1.5]} intensity={0.5} color="#c4b5fd" />
-        <pointLight position={[0, 1.2, 1.6]} intensity={0.65} color="#a5f3fc" />
-        <spotLight
-          position={[0, 3, 2]}
-          angle={0.45}
-          penumbra={0.5}
-          intensity={0.8}
-          color="#fef3c7"
-        />
-        <Environment preset="city" environmentIntensity={0.35} />
-        <ContactShadows
-          position={[0, -0.82, 0]}
-          opacity={0.5}
-          scale={2.4}
-          blur={2.2}
-          far={1.4}
-          color="#000000"
-        />
-        <Suspense fallback={<AvatarFallback />}>
-          <CartoonRobotModel mood={mood} url={modelUrl} />
+        <ambientLight intensity={0.9} />
+        <directionalLight position={[2, 4, 3]} intensity={1.35} />
+        <directionalLight position={[-2, 2, 1.5]} intensity={0.45} color="#c4b5fd" />
+        <pointLight position={[0, 1.2, 2]} intensity={0.55} color="#a5f3fc" />
+        <Suspense fallback={<ProceduralRobot />}>
+          <AvatarModelErrorBoundary>
+            <CartoonRobotModel mood={mood} url={modelUrl} />
+          </AvatarModelErrorBoundary>
         </Suspense>
       </Canvas>
       {statusLabel ? (
